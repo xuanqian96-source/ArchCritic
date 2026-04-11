@@ -1,15 +1,28 @@
-from pydantic_settings import BaseSettings
+"""集中管理后端配置，供主应用、数据库和模型模块读取。"""
+
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    """定义系统运行时会用到的配置项。"""
+
     openai_api_key: str = ""
-    llm_provider: str = "openai"
-    llm_model: str = "gpt-4o"
-    database_url: str = "sqlite+aiosqlite:///./archcritic.db"
+    llm_provider: str = "mock"
+    llm_model: str = "gpt-4o-mini"
+    database_url: str = "sqlite:///./archcritic.db"
     cors_origins: str = "http://localhost:5173"
+    app_name: str = "ArchCritic API"
+    app_version: str = "0.1.0"
 
-    class Config:
-        env_file = ".env"
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
-settings = Settings()
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    """返回缓存后的配置对象。"""
+    return Settings()
+
+
+settings = get_settings()
