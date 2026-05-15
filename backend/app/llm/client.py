@@ -67,6 +67,15 @@ class MockLLMClient(BaseLLMClient):
                     "issues": ["形式依据还可以更具体。"],
                     "suggestions": ["把形体策略和功能联系起来说明。"],
                 },
+                {
+                    "agent_type": "structure_agent",
+                    "dimension": "结构与可行性",
+                    "score": max(overall_score - 5, 55),
+                    "summary": "结构逻辑目前可用于概念表达，但还需要和空间尺度进一步对应。",
+                    "strengths": ["方案具备继续深化的基础。"],
+                    "issues": ["结构跨度、柱网或支撑方式尚未充分说明。"],
+                    "suggestions": ["补充结构体系意向和主要空间跨度说明。"],
+                },
             ],
         }
 
@@ -94,6 +103,29 @@ def get_llm_client(provider: str | None = None) -> BaseLLMClient:
             raise ValueError("当前未配置 OpenAI API Key，无法启用真实模型。")
         from app.llm.openai_client import OpenAILLMClient
 
-        return OpenAILLMClient(settings.openai_api_key, settings.llm_model)
+        return OpenAILLMClient(
+            settings.openai_api_key,
+            settings.llm_model,
+            timeout_seconds=settings.llm_timeout_seconds,
+            max_tokens=settings.llm_max_tokens,
+            image_detail=settings.llm_image_detail,
+        )
+
+    if resolved_provider == "dashscope":
+        if not settings.dashscope_api_key:
+            raise ValueError("当前未配置百炼 API Key，无法启用百炼模型。")
+        from app.llm.openai_client import OpenAILLMClient
+
+        return OpenAILLMClient(
+            settings.dashscope_api_key,
+            settings.llm_model,
+            settings.dashscope_base_url,
+            "json_object",
+            timeout_seconds=settings.llm_timeout_seconds,
+            max_tokens=settings.llm_max_tokens,
+            image_detail=settings.llm_image_detail,
+            extra_body={"enable_thinking": False},
+            default_headers={"X-DashScope-OssResourceResolve": "enable"},
+        )
 
     raise ValueError(f"暂不支持的模型提供方：{resolved_provider}")

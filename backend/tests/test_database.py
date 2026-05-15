@@ -17,6 +17,7 @@ def test_init_db_creates_core_tables():
         "users",
         "projects",
         "submissions",
+        "drawing_files",
         "agent_evaluations",
         "overall_reports",
     }.issubset(table_names)

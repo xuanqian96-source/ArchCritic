@@ -166,7 +166,7 @@ pytest-asyncio==0.24.*
 
 ```
 # LLM API
-OPENAI_API_KEY=sk-your-key-here
+OPENAI_API_KEY=
 LLM_PROVIDER=openai
 LLM_MODEL=gpt-4o
 

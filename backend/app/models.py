@@ -32,6 +32,7 @@ class Project(Base):
     name: Mapped[str] = mapped_column(String(200))
     building_type: Mapped[str] = mapped_column(String(100))
     owner_name: Mapped[str] = mapped_column(String(100))
+    grade: Mapped[str] = mapped_column(String(100), default="")
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -60,9 +61,34 @@ class Submission(Base):
     agent_evaluations: Mapped[list["AgentEvaluation"]] = relationship(
         back_populates="submission"
     )
+    drawing_files: Mapped[list["DrawingFile"]] = relationship(
+        back_populates="submission"
+    )
     overall_report: Mapped["OverallReport | None"] = relationship(
         back_populates="submission", uselist=False
     )
+
+
+class DrawingFile(Base):
+    """保存一次方案提交中上传的图纸文件。"""
+
+    __tablename__ = "drawing_files"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    submission_id: Mapped[int] = mapped_column(ForeignKey("submissions.id"))
+    drawing_type: Mapped[str] = mapped_column(String(50))
+    original_name: Mapped[str] = mapped_column(String(255))
+    file_url: Mapped[str] = mapped_column(String(500))
+    mime_type: Mapped[str] = mapped_column(String(100))
+    model_file_url: Mapped[str] = mapped_column(String(500), default="")
+    model_file_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    submission: Mapped[Submission] = relationship(back_populates="drawing_files")
 
 
 class AgentEvaluation(Base):

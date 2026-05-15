@@ -2,6 +2,7 @@
 
 from typing import AsyncGenerator
 
+from sqlalchemy import inspect, text
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
@@ -34,7 +35,43 @@ def init_db(database_url: str | None = None) -> None:
     from app import models
 
     del models
-    Base.metadata.create_all(bind=get_engine(database_url))
+    engine = get_engine(database_url)
+    Base.metadata.create_all(bind=engine)
+    ensure_sqlite_columns(engine)
+
+
+def ensure_sqlite_columns(engine: Engine) -> None:
+    """为旧版 SQLite 数据库补齐新增字段。"""
+    if engine.dialect.name != "sqlite":
+        return
+
+    with engine.begin() as connection:
+        inspector = inspect(connection)
+        if "projects" not in inspector.get_table_names():
+            return
+
+        project_columns = {
+            column["name"] for column in inspector.get_columns("projects")
+        }
+        if "grade" not in project_columns:
+            connection.execute(
+                text("ALTER TABLE projects ADD COLUMN grade VARCHAR(100) DEFAULT ''")
+            )
+
+        if "drawing_files" not in inspector.get_table_names():
+            return
+
+        drawing_columns = {
+            column["name"] for column in inspector.get_columns("drawing_files")
+        }
+        if "model_file_url" not in drawing_columns:
+            connection.execute(
+                text("ALTER TABLE drawing_files ADD COLUMN model_file_url VARCHAR(500) DEFAULT ''")
+            )
+        if "model_file_expires_at" not in drawing_columns:
+            connection.execute(
+                text("ALTER TABLE drawing_files ADD COLUMN model_file_expires_at DATETIME")
+            )
 
 
 async def get_db() -> AsyncGenerator[Session, None]:

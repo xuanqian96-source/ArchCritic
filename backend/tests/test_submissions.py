@@ -3,13 +3,16 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from app.config import get_settings
 from app.database import init_db
 from app.main import app
 
 
 @pytest.mark.asyncio
-async def test_create_submission_and_generate_demo_report():
+async def test_create_submission_and_generate_demo_report(monkeypatch):
     """确认提交方案后可以拿到演示评图结果。"""
+    monkeypatch.setenv("LLM_PROVIDER", "mock")
+    get_settings.cache_clear()
     init_db()
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
@@ -20,6 +23,7 @@ async def test_create_submission_and_generate_demo_report():
                 "name": "城市阅读展亭",
                 "building_type": "小型公共建筑",
                 "owner_name": "学生甲",
+                "grade": "大三建筑学",
             },
         )
         project_id = project_response.json()["id"]
@@ -42,6 +46,7 @@ async def test_create_submission_and_generate_demo_report():
         evaluation_response = await client.post(
             f"/api/submissions/{submission_id}/evaluate-demo"
         )
+        report_response = await client.get(f"/api/submissions/{submission_id}/report")
 
     assert submission_response.status_code == 201
     created_submission = submission_response.json()
@@ -50,7 +55,133 @@ async def test_create_submission_and_generate_demo_report():
     assert evaluation_response.status_code == 200
     report = evaluation_response.json()
     assert report["submission_id"] == submission_id
+    assert report["id"] >= 1
     assert report["overall_score"] >= 0
     assert len(report["must_fix"]) > 0
     assert len(report["strengths"]) > 0
     assert len(report["agent_evaluations"]) > 0
+
+    assert report_response.status_code == 200
+    assert report_response.json()["submission_id"] == submission_id
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_upload_and_list_submission_files(tmp_path, monkeypatch):
+    """确认图纸可以上传保存，并能按提交记录查询。"""
+    monkeypatch.setenv("UPLOAD_DIR", str(tmp_path))
+    monkeypatch.setenv("LLM_PROVIDER", "mock")
+    get_settings.cache_clear()
+    init_db()
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        project_response = await client.post(
+            "/api/projects",
+            json={
+                "name": "城市阅读展亭",
+                "building_type": "小型公共建筑",
+                "owner_name": "学生甲",
+                "grade": "大三建筑学",
+            },
+        )
+        project_id = project_response.json()["id"]
+
+        submission_response = await client.post(
+            "/api/submissions",
+            json={
+                "project_id": project_id,
+                "title": "第二次方案提交",
+                "design_stage": "方案阶段",
+                "description": "补充总平面图并保存到后端。",
+            },
+        )
+        submission_id = submission_response.json()["id"]
+
+        upload_response = await client.post(
+            f"/api/submissions/{submission_id}/files",
+            data={"drawing_type": "site"},
+            files={"file": ("site.png", b"fake-image-bytes", "image/png")},
+        )
+        list_response = await client.get(f"/api/submissions/{submission_id}/files")
+        get_submission_response = await client.get(f"/api/submissions/{submission_id}")
+
+    monkeypatch.delenv("UPLOAD_DIR", raising=False)
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    get_settings.cache_clear()
+
+    assert upload_response.status_code == 201
+    uploaded_file = upload_response.json()
+    assert uploaded_file["drawing_type"] == "site"
+    assert uploaded_file["original_name"] == "site.png"
+    assert uploaded_file["file_url"].startswith("/uploads/submissions/")
+
+    assert list_response.status_code == 200
+    assert len(list_response.json()) == 1
+
+    assert get_submission_response.status_code == 200
+    assert uploaded_file["file_url"] in get_submission_response.json()["image_urls"]
+
+
+@pytest.mark.asyncio
+async def test_report_references_use_wiki_files(tmp_path, monkeypatch):
+    """确认报告依据可以从 Wiki 测试知识库读取。"""
+    wiki_file = (
+        tmp_path
+        / "评价维度"
+        / "方案阶段"
+        / "功能与流线"
+        / "规范条文.md"
+    )
+    wiki_file.parent.mkdir(parents=True)
+    wiki_file.write_text(
+        "# 功能与流线 — 相关设计规范\n"
+        "\n"
+        "## 《民用建筑设计统一标准》GB 50352-2019\n"
+        "- **评图应用**：评价时关注主要流线方向是否明确。\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("WIKI_DIR", str(tmp_path))
+    monkeypatch.setenv("LLM_PROVIDER", "mock")
+    get_settings.cache_clear()
+    init_db()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        project_response = await client.post(
+            "/api/projects",
+            json={
+                "name": "Wiki 依据测试",
+                "building_type": "小型公共建筑",
+                "owner_name": "学生甲",
+                "grade": "大三建筑学",
+            },
+        )
+        project_id = project_response.json()["id"]
+        submission_response = await client.post(
+            "/api/submissions",
+            json={
+                "project_id": project_id,
+                "title": "方案阶段提交",
+                "design_stage": "方案阶段",
+                "description": "测试知识库依据读取。",
+            },
+        )
+        submission_id = submission_response.json()["id"]
+        report_response = await client.post(
+            f"/api/submissions/{submission_id}/evaluate-demo"
+        )
+        references_response = await client.get(
+            f"/api/submissions/{submission_id}/references"
+        )
+
+    monkeypatch.delenv("WIKI_DIR", raising=False)
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    get_settings.cache_clear()
+
+    assert report_response.status_code == 200
+    assert report_response.json()["references"][0]["title"] == "功能与流线 — 相关设计规范"
+    assert references_response.status_code == 200
+    assert references_response.json()[0]["source_type"] == "规范"

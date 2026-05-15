@@ -9,10 +9,19 @@ class Settings(BaseSettings):
     """定义系统运行时会用到的配置项。"""
 
     openai_api_key: str = ""
+    dashscope_api_key: str = ""
+    dashscope_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     llm_provider: str = "mock"
     llm_model: str = "gpt-4o-mini"
+    llm_timeout_seconds: int = 90
+    llm_max_tokens: int = 1200
+    llm_image_detail: str = "low"
+    llm_max_model_image_bytes: int = 2 * 1024 * 1024
+    llm_image_max_side: int = 384
     database_url: str = "sqlite:///./archcritic.db"
-    cors_origins: str = "http://localhost:5173"
+    upload_dir: str = "uploads"
+    wiki_dir: str = "../../wiki-test/wiki"
+    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     app_name: str = "ArchCritic API"
     app_version: str = "0.1.0"
 
