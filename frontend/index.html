@@ -480,6 +480,26 @@ body {
 
 .score-details { flex: 1; display: flex; flex-direction: column; gap: 12px; }
 .progress-item { width: 100%; }
+.progress-item.score-detail-trigger {
+    padding: 8px 9px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: #FAFAFA;
+    color: inherit;
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+    transition: var(--transition);
+}
+.progress-item.score-detail-trigger:hover {
+    border-color: var(--color-accent);
+    background: #FFF;
+}
+.progress-detail-note {
+    color: var(--color-accent);
+    font-size: 10px;
+    white-space: nowrap;
+}
 .progress-header { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px; color: var(--text-muted);}
 .progress-score { font-family: monospace; font-size: 12px; color: var(--text-main); }
 .progress-bar { width: 100%; height: 4px; background: #EEE; border-radius: 2px; overflow: hidden; }
@@ -520,6 +540,28 @@ body {
 .suggestion-card h4 { font-size: 13px; margin-bottom: 8px; font-weight: 500; display: flex; align-items: center; gap: 6px; }
 .suggestion-card h4::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; }
 .suggestion-card p { font-size: 12px; color: #555; line-height: 1.6; }
+.feedback-reference-links,
+.score-reference-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+}
+.knowledge-cite-btn {
+    min-height: 24px;
+    padding: 3px 8px;
+    border: 1px solid #C8D7F6;
+    border-radius: 4px;
+    background: #F5F8FF;
+    color: #3159A7;
+    cursor: pointer;
+    font: inherit;
+    font-size: 10px;
+}
+.knowledge-cite-btn:hover {
+    border-color: var(--color-accent);
+    background: #FFF;
+}
 
 .red-card { border-left: 3px solid var(--color-red); }
 .red-card h4::before { background: var(--color-red); }
@@ -1029,6 +1071,128 @@ body {
     border-radius: 6px;
     background: #F8F8F8;
 }
+.score-detail-panel { width: min(720px, calc(100vw - 32px)); }
+.score-detail-summary {
+    margin-bottom: 14px;
+    padding: 12px;
+    border-left: 3px solid var(--color-primary);
+    background: #FAFAFA;
+}
+.score-detail-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 14px;
+}
+.score-detail-meta span {
+    padding: 4px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: #FFF;
+    color: var(--text-muted);
+    font-size: 10px;
+}
+.score-breakdown-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+}
+.score-breakdown-card {
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: #FAFAFA;
+}
+.score-breakdown-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+    color: var(--text-main);
+    font-weight: 500;
+}
+.score-breakdown-card p,
+.score-detail-block li {
+    color: #555;
+    font-size: 12px;
+    line-height: 1.65;
+}
+.score-breakdown-evidence {
+    margin-top: 7px;
+    color: var(--text-muted);
+}
+.score-detail-block { margin-top: 14px; }
+.score-detail-block h3 { margin-bottom: 8px; }
+.score-detail-block ul {
+    margin: 0;
+    padding-left: 18px;
+}
+.score-fact-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 8px;
+    list-style: none;
+    padding-left: 0 !important;
+}
+.score-fact-list li {
+    padding: 8px 9px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: #FFF;
+}
+.history-card-panel { width: min(760px, calc(100vw - 32px)); }
+.history-card-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px;
+}
+.history-version-card {
+    padding: 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: #FAFAFA;
+    text-align: left;
+    color: var(--text-main);
+    cursor: pointer;
+    font: inherit;
+    transition: var(--transition);
+}
+.history-version-card:hover {
+    border-color: var(--color-accent);
+    background: #FFF;
+}
+.history-version-card.active {
+    border-color: var(--color-primary);
+    background: #F2F6FF;
+}
+.history-version-title {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    font-weight: 500;
+}
+.history-version-meta,
+.history-version-desc {
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.55;
+}
+.history-version-score {
+    margin-top: 10px;
+    color: var(--text-main);
+    font-size: 12px;
+}
+.history-empty {
+    padding: 16px;
+    border: 1px dashed var(--border-color);
+    border-radius: 6px;
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.6;
+}
 
 .upload-modal {
     position: fixed;
@@ -1325,7 +1489,7 @@ body {
             <div class="footer-section section-history">
                 <div class="section-title">
                     <h3>历史版本追踪</h3>
-                    <button class="btn-tiny">查看对比</button>
+                    <button class="btn-tiny" id="historyVersionsBtn" type="button">查看历史版本</button>
                 </div>
                 <div class="timeline">
                     <div class="timeline-point">
@@ -1417,6 +1581,30 @@ body {
             <div class="knowledge-card-body" id="knowledgeCardBody"></div>
         </div>
     </div>
+    <div class="knowledge-card-backdrop" id="scoreDetailModal" aria-hidden="true">
+        <div class="knowledge-card-panel score-detail-panel" role="dialog" aria-modal="true" aria-labelledby="scoreDetailTitle">
+            <div class="knowledge-card-header">
+                <div>
+                    <div class="knowledge-card-kicker" id="scoreDetailKicker">专项评分</div>
+                    <div class="knowledge-card-title" id="scoreDetailTitle">评分卡片</div>
+                </div>
+                <button class="knowledge-card-close" id="scoreDetailClose" type="button" aria-label="关闭">×</button>
+            </div>
+            <div class="knowledge-card-body" id="scoreDetailBody"></div>
+        </div>
+    </div>
+    <div class="knowledge-card-backdrop" id="historyModal" aria-hidden="true">
+        <div class="knowledge-card-panel history-card-panel" role="dialog" aria-modal="true" aria-labelledby="historyModalTitle">
+            <div class="knowledge-card-header">
+                <div>
+                    <div class="knowledge-card-kicker">历史版本</div>
+                    <div class="knowledge-card-title" id="historyModalTitle">已保存评图记录</div>
+                </div>
+                <button class="knowledge-card-close" id="historyModalClose" type="button" aria-label="关闭">×</button>
+            </div>
+            <div class="knowledge-card-body" id="historyModalBody"></div>
+        </div>
+    </div>
     <script>
 /* 内嵌脚本：离线演示版，无需外部 JS 文件 */
 // script.js - Interactive behaviors for ArchCritic Demo
@@ -1439,8 +1627,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const uploadedDrawings = {};
     let activeDrawingType = 'site';
     let currentProjectId = null;
+    let currentSubmissionId = null;
     let currentProjectSignature = '';
     let currentKnowledgeReferences = [];
+    let currentAgentEvaluations = [];
+    let currentHistoryItems = [];
     const WORKSPACE_STATE_KEY = 'archcritic:last-workspace';
 
     /* 1. Stage Selector Toggle */
@@ -1467,6 +1658,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const knowledgeCardKicker = document.getElementById('knowledgeCardKicker');
     const knowledgeCardTitle = document.getElementById('knowledgeCardTitle');
     const knowledgeCardBody = document.getElementById('knowledgeCardBody');
+    const historyVersionsBtn = document.getElementById('historyVersionsBtn');
+    const historyModal = document.getElementById('historyModal');
+    const historyModalClose = document.getElementById('historyModalClose');
+    const historyModalBody = document.getElementById('historyModalBody');
+    const scoreDetailModal = document.getElementById('scoreDetailModal');
+    const scoreDetailClose = document.getElementById('scoreDetailClose');
+    const scoreDetailKicker = document.getElementById('scoreDetailKicker');
+    const scoreDetailTitle = document.getElementById('scoreDetailTitle');
+    const scoreDetailBody = document.getElementById('scoreDetailBody');
     const thumbnails = document.querySelectorAll('.thumbnail');
     const vpTabs = document.querySelectorAll('.viewport-header .tab');
     const image = document.querySelector('.blueprint-image');
@@ -1541,6 +1741,19 @@ document.addEventListener('DOMContentLoaded', () => {
     knowledgeCardModal.addEventListener('click', (event) => {
         if (event.target === knowledgeCardModal) {
             closeKnowledgeCard();
+        }
+    });
+    scoreDetailClose.addEventListener('click', closeScoreDetailCard);
+    scoreDetailModal.addEventListener('click', (event) => {
+        if (event.target === scoreDetailModal) {
+            closeScoreDetailCard();
+        }
+    });
+    historyVersionsBtn.addEventListener('click', openHistoryModal);
+    historyModalClose.addEventListener('click', closeHistoryModal);
+    historyModal.addEventListener('click', (event) => {
+        if (event.target === historyModal) {
+            closeHistoryModal();
         }
     });
 
@@ -2011,6 +2224,152 @@ document.addEventListener('DOMContentLoaded', () => {
         knowledgeCardModal.setAttribute('aria-hidden', 'true');
     }
 
+    function getKnowledgeReferenceIndex(referenceId) {
+        const normalized = String(referenceId || '').toUpperCase();
+        return currentKnowledgeReferences.findIndex(item =>
+            String(item.reference_id || '').toUpperCase() === normalized
+        );
+    }
+
+    function extractKnowledgeReferenceIds(text) {
+        const seen = new Set();
+        const ids = [];
+        String(text || '').match(/\[K\d+\]/gi)?.forEach(match => {
+            const referenceId = match.replace(/[\[\]]/g, '').toUpperCase();
+            if (!seen.has(referenceId) && getKnowledgeReferenceIndex(referenceId) >= 0) {
+                seen.add(referenceId);
+                ids.push(referenceId);
+            }
+        });
+        return ids;
+    }
+
+    function stripKnowledgeReferenceIds(text) {
+        return String(text || '').replace(/\s*\[K\d+\]/gi, '').trim();
+    }
+
+    function renderReferenceButtons(referenceIds, className = 'score-reference-links') {
+        const ids = Array.from(new Set((referenceIds || []).map(item => String(item).toUpperCase())))
+            .filter(item => getKnowledgeReferenceIndex(item) >= 0);
+        if (ids.length === 0) return '';
+        return `
+            <div class="${className}">
+                ${ids.map(referenceId => {
+                    const index = getKnowledgeReferenceIndex(referenceId);
+                    const reference = currentKnowledgeReferences[index] || {};
+                    return `
+                        <button type="button" class="knowledge-cite-btn" data-knowledge-reference-id="${escapeHtml(referenceId)}" title="${escapeHtml(reference.title || '打开知识卡片')}">
+                            ${escapeHtml(referenceId)} 知识卡片
+                        </button>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    }
+
+    function bindKnowledgeReferenceButtons(scope) {
+        scope.querySelectorAll('[data-knowledge-reference-id]').forEach(button => {
+            button.addEventListener('click', () => {
+                const index = getKnowledgeReferenceIndex(button.dataset.knowledgeReferenceId);
+                if (index >= 0) {
+                    openKnowledgeCard(index);
+                }
+            });
+        });
+    }
+
+    function renderScoreTextList(title, items) {
+        if (!items || items.length === 0) return '';
+        return `
+            <div class="score-detail-block">
+                <h3>${escapeHtml(title)}</h3>
+                <ul>
+                    ${items.map(text => `
+                        <li>
+                            ${escapeHtml(stripKnowledgeReferenceIds(text))}
+                            ${renderReferenceButtons(extractKnowledgeReferenceIds(text))}
+                        </li>
+                    `).join('')}
+                </ul>
+            </div>
+        `;
+    }
+
+    function renderObservedFacts(facts) {
+        const entries = Array.isArray(facts)
+            ? facts.map((text, index) => [`事实 ${index + 1}`, text])
+            : Object.entries(facts || {});
+        if (entries.length === 0) return '';
+        return `
+            <div class="score-detail-block">
+                <h3>已确认事实</h3>
+                <ul class="score-fact-list">
+                    ${entries.map(([label, value]) => `
+                        <li><strong>${escapeHtml(label)}：</strong>${escapeHtml(value)}</li>
+                    `).join('')}
+                </ul>
+            </div>
+        `;
+    }
+
+    function renderSubScoreCards(subScores) {
+        const rows = Object.entries(subScores || {});
+        if (rows.length === 0) {
+            return '<div class="score-detail-summary">当前专项没有返回可展开的分项评分。</div>';
+        }
+        return `
+            <div class="score-breakdown-grid">
+                ${rows.map(([name, detail]) => {
+                    const referenceIds = extractKnowledgeReferenceIds(
+                        `${detail.reason || ''} ${detail.evidence || ''}`
+                    );
+                    return `
+                        <div class="score-breakdown-card">
+                            <div class="score-breakdown-head">
+                                <span>${escapeHtml(name)}</span>
+                                <span>${escapeHtml(detail.score ?? 0)} / ${escapeHtml(detail.max_score ?? '-')}</span>
+                            </div>
+                            <p>${escapeHtml(stripKnowledgeReferenceIds(detail.reason || '该项暂无评分理由。'))}</p>
+                            <p class="score-breakdown-evidence">依据：${escapeHtml(stripKnowledgeReferenceIds(detail.evidence || '暂无明确依据。'))}</p>
+                            ${renderReferenceButtons(referenceIds)}
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    }
+
+    function openScoreDetailCard(index) {
+        const item = currentAgentEvaluations[index];
+        const details = item?.details || {};
+        if (!item || !details.sub_scores) return;
+        const profile = getAgentProfile(item.agent_type);
+        scoreDetailKicker.textContent = `${profile?.name || item.dimension || '专项 Agent'} · ${Math.round(item.score ?? 0)} 分`;
+        scoreDetailTitle.textContent = `${item.dimension || '专项'}评分卡片`;
+        scoreDetailBody.innerHTML = `
+            <div class="score-detail-summary">${escapeHtml(item.summary || '专项评审已完成。')}</div>
+            <div class="score-detail-meta">
+                <span>总分 ${escapeHtml(Math.round(item.score ?? 0))} / 100</span>
+                <span>置信度 ${escapeHtml(details.confidence || 'medium')}</span>
+                <span>${escapeHtml(Object.keys(details.sub_scores || {}).length)} 个评分项</span>
+            </div>
+            ${renderSubScoreCards(details.sub_scores)}
+            ${renderScoreTextList('专项问题', item.issues)}
+            ${renderScoreTextList('修改建议', item.suggestions)}
+            ${renderObservedFacts(details.observed_facts)}
+            ${renderScoreTextList('信息缺口', details.missing_information)}
+            ${renderScoreTextList('不确定观察', details.uncertain_observations)}
+        `;
+        bindKnowledgeReferenceButtons(scoreDetailBody);
+        scoreDetailModal.classList.add('open');
+        scoreDetailModal.setAttribute('aria-hidden', 'false');
+    }
+
+    function closeScoreDetailCard() {
+        scoreDetailModal.classList.remove('open');
+        scoreDetailModal.setAttribute('aria-hidden', 'true');
+    }
+
     function buildProjectSignature(projectName, buildingType, ownerName, grade) {
         return [projectName, buildingType, ownerName, grade].join('|');
     }
@@ -2033,6 +2392,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function saveWorkspaceState(projectId, submissionId) {
+        currentProjectId = projectId;
+        currentSubmissionId = submissionId;
         localStorage.setItem(WORKSPACE_STATE_KEY, JSON.stringify({
             projectId,
             submissionId,
@@ -2130,12 +2491,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const scoreLabel = document.querySelector('.score-label');
         circle.setAttribute('stroke-dasharray', `${score}, 100`);
         percentage.textContent = score;
-        scoreLabel.textContent = `总分 / ${report.grade || '-'}`;
+        scoreLabel.textContent = `综合 / ${report.grade || '-'}`;
     }
 
     function renderDimensionScores(report) {
         const scoreDetails = document.querySelector('.score-details');
-        const items = report.agent_evaluations || [];
+        const items = (report.agent_evaluations || [])
+            .filter(item => item.agent_type !== 'review_agent');
+        currentAgentEvaluations = items;
         if (items.length === 0) {
             scoreDetails.innerHTML = '<div class="progress-header"><span>暂无分项评价</span><span class="progress-score">等待分析</span></div>';
             return;
@@ -2144,16 +2507,28 @@ document.addEventListener('DOMContentLoaded', () => {
         scoreDetails.innerHTML = items.map((item, index) => {
             const score = Math.round(item.score ?? 0);
             const fillClass = ['fill-blue', 'fill-orange', 'fill-grey'][index % 3];
+            const canOpen = item.agent_type !== 'review_agent'
+                && Object.keys(item.details?.sub_scores || {}).length > 0;
+            const tag = canOpen ? 'button' : 'div';
+            const detailAttrs = canOpen
+                ? ` type="button" data-score-detail-index="${index}" title="查看${escapeHtml(item.dimension)}评分详情"`
+                : '';
             return `
-                <div class="progress-item">
+                <${tag} class="progress-item ${canOpen ? 'score-detail-trigger' : ''}"${detailAttrs}>
                     <div class="progress-header">
                         <span>${escapeHtml(item.dimension)}</span>
                         <span class="progress-score">${score} / 100</span>
                     </div>
                     <div class="progress-bar"><div class="progress-fill ${fillClass}" style="width: ${score}%"></div></div>
-                </div>
+                    ${canOpen ? '<div class="progress-detail-note">查看评分构成</div>' : ''}
+                </${tag}>
             `;
         }).join('');
+        scoreDetails.querySelectorAll('[data-score-detail-index]').forEach(button => {
+            button.addEventListener('click', () => {
+                openScoreDetailCard(Number(button.dataset.scoreDetailIndex));
+            });
+        });
     }
 
     function renderSuggestionList(targetId, items, cardClass, emptyText) {
@@ -2163,20 +2538,27 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        content.innerHTML = items.map((text, index) => `
+        content.innerHTML = items.map((item, index) => {
+            const text = item?.text ?? item;
+            const referenceIds = item?.reference_ids || extractKnowledgeReferenceIds(text);
+            return `
             <div class="suggestion-card ${cardClass}">
                 <h4>${escapeHtml(index === 0 ? '重点反馈' : `反馈 ${index + 1}`)}</h4>
-                <p>${escapeHtml(text)}</p>
+                <p>${escapeHtml(stripKnowledgeReferenceIds(text))}</p>
+                ${renderReferenceButtons(referenceIds, 'feedback-reference-links')}
             </div>
-        `).join('');
+        `;
+        }).join('');
+        bindKnowledgeReferenceButtons(content);
     }
 
     function renderSuggestions(report) {
         const tabs = document.querySelectorAll('.suggestion-tabs .s-tab');
+        const feedback = report.feedback || {};
         const counts = {
-            'must-fix': report.must_fix?.length || 0,
-            advice: report.should_improve?.length || 0,
-            good: report.strengths?.length || 0
+            'must-fix': feedback.must_fix?.length || report.must_fix?.length || 0,
+            advice: feedback.should_improve?.length || report.should_improve?.length || 0,
+            good: feedback.strengths?.length || report.strengths?.length || 0
         };
         tabs.forEach(tab => {
             const target = tab.dataset.target;
@@ -2184,9 +2566,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (target === 'advice') tab.textContent = `建议优化 (${counts[target]})`;
             if (target === 'good') tab.textContent = `当前优势 (${counts[target]})`;
         });
-        renderSuggestionList('must-fix', report.must_fix, 'red-card', '暂无必须修改项');
-        renderSuggestionList('advice', report.should_improve, 'orange-card', '暂无建议优化项');
-        renderSuggestionList('good', report.strengths, 'blue-card', '暂无当前优势');
+        renderSuggestionList('must-fix', feedback.must_fix || report.must_fix, 'red-card', '暂无必须修改项');
+        renderSuggestionList('advice', feedback.should_improve || report.should_improve, 'orange-card', '暂无建议优化项');
+        renderSuggestionList('good', feedback.strengths || report.strengths, 'blue-card', '暂无当前优势');
     }
 
     function renderKnowledgeReferences(references) {
@@ -2246,9 +2628,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderReport(report, announce = true) {
         renderScore(report);
+        renderKnowledgeReferences(report.references || []);
         renderDimensionScores(report);
         renderSuggestions(report);
-        renderKnowledgeReferences(report.references || []);
         renderAgentCards(report);
         if (!announce) {
             return;
@@ -2266,6 +2648,8 @@ document.addEventListener('DOMContentLoaded', () => {
     async function renderHistory(projectId, activeSubmissionId) {
         const history = await requestJson(`${API_BASE}/api/projects/${projectId}/history`);
         const timeline = document.querySelector('.timeline');
+        currentHistoryItems = history || [];
+        currentSubmissionId = activeSubmissionId;
         if (!history || history.length === 0) {
             timeline.innerHTML = '<div class="timeline-point active"><div class="t-title">暂无历史</div><div class="t-desc">等待第一次提交</div><div class="t-dot t-active"></div></div>';
             return;
@@ -2282,6 +2666,92 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
         }).join('');
+    }
+
+    function formatHistoryDate(value) {
+        if (!value) return '时间未记录';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return '时间未记录';
+        return date.toLocaleString('zh-CN', {
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    }
+
+    async function openHistoryModal() {
+        if (!currentProjectId) {
+            alert('当前还没有保存项目，开始一次评图后会生成历史版本。');
+            return;
+        }
+        currentHistoryItems = await requestJson(`${API_BASE}/api/projects/${currentProjectId}/history`);
+        renderHistoryCards();
+        historyModal.classList.add('open');
+        historyModal.setAttribute('aria-hidden', 'false');
+    }
+
+    function closeHistoryModal() {
+        historyModal.classList.remove('open');
+        historyModal.setAttribute('aria-hidden', 'true');
+    }
+
+    function renderHistoryCards() {
+        if (!currentHistoryItems || currentHistoryItems.length === 0) {
+            historyModalBody.innerHTML = '<div class="history-empty">暂无历史版本。完成一次评图后，系统会自动保存对应提交、图纸、报告和知识库依据快照。</div>';
+            return;
+        }
+
+        historyModalBody.innerHTML = `
+            <div class="history-card-list">
+                ${currentHistoryItems.map((item, index) => {
+                    const active = item.id === currentSubmissionId;
+                    const scoreText = item.overall_score == null
+                        ? '尚未生成报告'
+                        : `${Math.round(item.overall_score)} 分 / ${item.grade || '-'}`;
+                    return `
+                        <button type="button" class="history-version-card ${active ? 'active' : ''}" data-history-submission-id="${item.id}">
+                            <div class="history-version-title">
+                                <span>第 ${index + 1} 版</span>
+                                <span>${active ? '当前' : '切换'}</span>
+                            </div>
+                            <div class="history-version-meta">${escapeHtml(item.design_stage || '未标注阶段')} · ${escapeHtml(formatHistoryDate(item.created_at))}</div>
+                            <div class="history-version-desc">${escapeHtml(item.title || `提交 #${item.id}`)}</div>
+                            <div class="history-version-score">${escapeHtml(scoreText)}</div>
+                        </button>
+                    `;
+                }).join('')}
+            </div>
+        `;
+        historyModalBody.querySelectorAll('[data-history-submission-id]').forEach(button => {
+            button.addEventListener('click', () => {
+                switchToHistoryVersion(Number(button.dataset.historySubmissionId));
+            });
+        });
+    }
+
+    async function switchToHistoryVersion(submissionId) {
+        if (!currentProjectId || !submissionId) return;
+        const submission = await requestJson(`${API_BASE}/api/submissions/${submissionId}`);
+        applySubmissionToForm(submission);
+        const files = await requestJson(`${API_BASE}/api/submissions/${submissionId}/files`);
+        renderServerDrawings(files);
+        const report = await requestJson(`${API_BASE}/api/submissions/${submissionId}/report`).catch(() => null);
+        if (report) {
+            renderReport(report, false);
+        } else {
+            renderScore({ overall_score: 0, grade: '-' });
+            renderDimensionScores({ agent_evaluations: [] });
+            renderSuggestions({ must_fix: [], should_improve: [], strengths: [] });
+            renderKnowledgeReferences([]);
+            renderAgentWorkingState('');
+            appendChatMessage('assistant', `已切换到提交 #${submissionId}，该版本尚未生成评图报告。`, '历史版本');
+        }
+        await renderHistory(currentProjectId, submissionId);
+        saveWorkspaceState(currentProjectId, submissionId);
+        closeHistoryModal();
+        setRightPanelView('report');
+        appendChatMessage('assistant', `已切换到历史版本：提交 #${submissionId}。`, '历史版本');
     }
 
     btnMassive.addEventListener('click', async () => {

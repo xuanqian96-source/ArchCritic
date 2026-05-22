@@ -91,8 +91,16 @@ class AgentEvaluationRead(BaseModel):
     strengths: list[str]
     issues: list[str]
     suggestions: list[str]
+    details: dict = Field(default_factory=dict)
 
     model_config = {"from_attributes": True}
+
+
+class FeedbackItemRead(BaseModel):
+    """返回一条带知识引用的报告反馈。"""
+
+    text: str
+    reference_ids: list[str] = Field(default_factory=list)
 
 
 class OverallReportRead(BaseModel):
@@ -109,6 +117,7 @@ class OverallReportRead(BaseModel):
     strengths: list[str]
     agent_evaluations: list[AgentEvaluationRead]
     references: list[KnowledgeReferenceRead] = Field(default_factory=list)
+    feedback: dict[str, list[FeedbackItemRead]] = Field(default_factory=dict)
 
 
 class SubmissionHistoryRead(BaseModel):

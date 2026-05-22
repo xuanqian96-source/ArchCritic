@@ -28,6 +28,8 @@ def test_scheme_review_calls_specialists_in_order_and_keeps_all_images():
     ]
     assert report["summary"] == "四个专项结果已汇总，方案可以继续深化。"
     assert report["overall_score"] == 71.2
+    assert "功能满足" in report["agent_evaluations"][0]["details"]["sub_scores"]
+    assert "场地解读" in report["agent_evaluations"][1]["details"]["sub_scores"]
     assert len(llm_client.client.chat.completions.calls) == 5
     assert llm_client.client.chat.completions.calls[1]["max_tokens"] == 2200
     assert llm_client.client.chat.completions.calls[4]["max_tokens"] == 2200

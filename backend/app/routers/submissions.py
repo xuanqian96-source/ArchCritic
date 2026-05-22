@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -579,6 +580,7 @@ def save_report_data(
                 strengths=agent_item["strengths"],
                 issues=agent_item["issues"],
                 suggestions=agent_item["suggestions"],
+                details=agent_item.get("details") or {},
             )
         )
 
@@ -632,11 +634,53 @@ def build_report_response(
                 "strengths": item.strengths,
                 "issues": item.issues,
                 "suggestions": item.suggestions,
+                "details": item.details or {},
             }
             for item in agent_evaluations
         ],
         references=references,
+        feedback=build_feedback_items(
+            {
+                "must_fix": overall_report.must_fix,
+                "should_improve": overall_report.should_improve,
+                "optional_improvements": overall_report.optional_improvements,
+                "strengths": overall_report.strengths,
+            },
+            references,
+        ),
     )
+
+
+def build_feedback_items(feedback: dict[str, list[str]], references: list[dict]) -> dict:
+    """把报告反馈中的知识编号整理成前端可点击引用。"""
+    valid_reference_ids = {
+        str(item.get("reference_id", "")).upper()
+        for item in references
+        if item.get("reference_id")
+    }
+    return {
+        category: [
+            {
+                "text": str(text),
+                "reference_ids": extract_reference_ids(str(text), valid_reference_ids),
+            }
+            for text in items or []
+        ]
+        for category, items in feedback.items()
+    }
+
+
+def extract_reference_ids(text: str, valid_reference_ids: set[str]) -> list[str]:
+    """从反馈文本中提取本次报告真实存在的知识编号。"""
+    ids = re.findall(r"\[(K\d+)\]", text, flags=re.IGNORECASE)
+    seen: set[str] = set()
+    reference_ids = []
+    for item in ids:
+        normalized = item.upper()
+        if normalized in valid_reference_ids and normalized not in seen:
+            seen.add(normalized)
+            reference_ids.append(normalized)
+    return reference_ids
 
 
 def save_reference_snapshots(

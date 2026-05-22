@@ -377,6 +377,7 @@ def function_agent_report_to_overall(report: dict, context: dict | None = None) 
                 "strengths": report["strengths"],
                 "issues": issues,
                 "suggestions": suggestions,
+                "details": build_agent_evaluation_details(report),
             },
             *[
                 {
@@ -391,6 +392,20 @@ def function_agent_report_to_overall(report: dict, context: dict | None = None) 
                 for index, (name, item) in enumerate(sub_scores.items(), start=1)
             ],
         ],
+    }
+
+
+def build_agent_evaluation_details(report: dict) -> dict:
+    """保留专项评分卡片需要的细节。"""
+    return {
+        "confidence": report.get("confidence", "medium"),
+        "observed_facts": report.get("observed_facts") or {},
+        "sub_scores": report.get("sub_scores") or {},
+        "must_fix": report.get("must_fix") or [],
+        "should_improve": report.get("should_improve") or [],
+        "optional_improvements": report.get("optional_improvements") or [],
+        "missing_information": report.get("missing_information") or [],
+        "uncertain_observations": report.get("uncertain_observations") or [],
     }
 
 

@@ -105,6 +105,7 @@ class AgentEvaluation(Base):
     strengths: Mapped[list[str]] = mapped_column(JSON, default=list)
     issues: Mapped[list[str]] = mapped_column(JSON, default=list)
     suggestions: Mapped[list[str]] = mapped_column(JSON, default=list)
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

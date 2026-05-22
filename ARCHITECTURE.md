@@ -5,11 +5,11 @@
 - `backend/app/main.py`：后端入口，负责启动服务、挂载中间件、接口、上传文件和知识库图片静态访问。
 - `backend/app/config.py`：读取系统配置，包括数据库、跨域和上传目录。
 - `backend/app/database.py`：创建数据库连接和会话，并为旧 SQLite 数据库补齐新增字段。
-- `backend/app/models.py`：定义项目、提交、图纸文件和评图结果等数据表。
-- `backend/app/schemas.py`：定义接口输入输出格式。
+- `backend/app/models.py`：定义项目、提交、图纸文件、评图结果和专项评分细节等数据表。
+- `backend/app/schemas.py`：定义接口输入输出格式，包括反馈问题的知识引用和专项评分详情。
 - `backend/app/wiki.py`：从 `知识库测试版` 或旧测试 Wiki 中检索相关知识卡片，拆分常见问题，并整理为模型可引用、前端可显示的依据和图片。
-- `backend/app/agents/function_agent.py`：整理提交信息、图纸和 Wiki 依据，调用功能与流线 Agent，并校验模型输出；模型输入会发送全部可用图纸，并优先让模型读取平面图。
-- `backend/app/agents/scheme_review.py`：编排方案阶段功能、场地、几何形式、结构和综合评审 Agent 的顺序调用，并把专项结果合成最终报告。
+- `backend/app/agents/function_agent.py`：整理提交信息、图纸和 Wiki 依据，调用功能与流线 Agent，并校验模型输出；模型输入会发送全部可用图纸，并优先让模型读取平面图；专项细节会保留给前端评分卡片。
+- `backend/app/agents/scheme_review.py`：编排方案阶段功能、场地、几何形式、结构和综合评审 Agent 的顺序调用，并把专项结果和评分细节合成最终报告。
 - `backend/app/agents/image_payload.py`：在必须使用 base64 兜底时处理模型图片 payload。
 - `backend/app/agents/prompts/function_agent_v1.py`：保存功能与流线 Agent v1 的系统提示词、输出结构和用户提示词模板。
 - `backend/app/agents/prompts/scheme_agents_v1.py`：保存方案阶段场地、几何形式、结构和综合评审 Agent 的规则、评分项与提示词模板。
@@ -20,7 +20,7 @@
 - `backend/app/llm/client.py`：根据配置或本次请求参数返回演示模型或真实模型客户端。
 - `backend/app/llm/dashscope_files.py`：调用百炼上传策略接口，把本地图纸上传为模型可读取的临时 `oss://` URL，并对临时上传失败做重试。
 - `backend/app/llm/openai_client.py`：封装 OpenAI 兼容调用入口，当前支持 OpenAI、阿里云百炼和 Gemini，并把功能 Agent 结果转换为前端报告结构。
-- `frontend/index.html`：当前本地前端入口，承载 ArchCritic Demo 工作台界面、项目信息更新、多张高清图片上传、模型选择、后端保存、刷新恢复、图纸查看、Agent 头像进度和知识卡片交互。
+- `frontend/index.html`：当前本地前端入口，承载 ArchCritic Demo 工作台界面、项目信息更新、多张高清图片上传、模型选择、后端保存、刷新恢复、图纸查看、Agent 头像进度、知识卡片交互、专项评分展开和历史版本切换。
 - `frontend/package.json`：前端运行脚本，当前只保留静态 Vite 页面所需配置。
 - `frontend/vite.config.js`：Vite 本地开发配置。
 - `docs/plans/2026-05-19-obsidian-wiki-knowledge-graph-route.md`：说明 Obsidian 知识库如何整理为 Wiki、索引和后续知识图谱，并被评图模型调用。
@@ -39,7 +39,10 @@
 - 流式评图结束后会返回完整报告结构，包括知识库依据，避免前端必须刷新后才看到追溯内容。
 - Wiki 依据接口从评价维度、设计规范、优秀案例和常见问题中按项目上下文检索相关 Markdown，整理编号、标题、来源类型、摘要、用户版正文和图片后返回前端，并把编号交给模型引用。
 - 每次生成评图报告时，后端会保存当次实际使用的 Wiki 依据快照；历史报告优先读取快照，避免知识库后续修改后 `[K1]`、`[K2]` 与原报告错位。
-- 前端“知识库追溯”把每条依据渲染为可点击按钮，点击后以知识卡片形式显示对应 Markdown 内容。
+- 后端会从报告反馈文字中提取本次真实存在的 `[K1]`、`[K2]` 等编号，整理成前端可点击引用；不存在于本次知识快照的编号不会生成链接。
+- 前端“知识库追溯”把每条依据渲染为可点击按钮，点击后以知识卡片形式显示对应 Markdown 内容；报告问题和专项评分理由中的引用按钮复用同一套知识卡片。
+- 前端专项评分条可打开评分卡片，读取 `agent_evaluations.details` 展示分项分数、理由、证据、已确认事实、信息缺口和不确定观察。
+- 前端历史版本按钮会读取项目提交历史，弹出已保存版本卡片；点击版本后重新读取该提交的表单信息、图纸、报告和知识库快照，并切换工作台状态。
 - 前端评图完成后把最近项目和提交记录到浏览器本地，刷新页面时重新从后端读取项目、图纸、报告和历史版本。
 
 ## 关键设计决定和原因
@@ -62,4 +65,6 @@
 - 功能 Agent 的提示词和结构化输出统一为 `observed_facts + sub_scores`，原因是先确认图纸事实再评分，能减少“看不清”内容被误写成必须修改。
 - 方案阶段新增 Agent 采用顺序调用并设置 285 秒总预算，原因是前端需要显示清楚的评审过程，同时演示流程不能长时间等待。
 - 综合评审 Agent 只读取专项结果而不重新发明图纸事实，原因是最终报告要把确定结论和不确定观察分开，避免汇总阶段放大误判。
+- 专项评分详情保存到 `agent_evaluations.details`，原因是总分本身不足以解释 Agent 判断，前端需要展示分项构成和证据。
+- 报告问题只链接本次知识库快照中真实存在的编号，原因是历史报告必须保持引用稳定，避免知识库更新后错链。
 - 前端脚本直接调用本地 `node_modules` 中的 Vite，原因是当前环境下可执行脚本权限不稳定，这种写法更稳。

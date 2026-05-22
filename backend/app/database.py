@@ -58,20 +58,28 @@ def ensure_sqlite_columns(engine: Engine) -> None:
                 text("ALTER TABLE projects ADD COLUMN grade VARCHAR(100) DEFAULT ''")
             )
 
-        if "drawing_files" not in inspector.get_table_names():
-            return
+        table_names = set(inspector.get_table_names())
+        if "drawing_files" in table_names:
+            drawing_columns = {
+                column["name"] for column in inspector.get_columns("drawing_files")
+            }
+            if "model_file_url" not in drawing_columns:
+                connection.execute(
+                    text("ALTER TABLE drawing_files ADD COLUMN model_file_url VARCHAR(500) DEFAULT ''")
+                )
+            if "model_file_expires_at" not in drawing_columns:
+                connection.execute(
+                    text("ALTER TABLE drawing_files ADD COLUMN model_file_expires_at DATETIME")
+                )
 
-        drawing_columns = {
-            column["name"] for column in inspector.get_columns("drawing_files")
-        }
-        if "model_file_url" not in drawing_columns:
-            connection.execute(
-                text("ALTER TABLE drawing_files ADD COLUMN model_file_url VARCHAR(500) DEFAULT ''")
-            )
-        if "model_file_expires_at" not in drawing_columns:
-            connection.execute(
-                text("ALTER TABLE drawing_files ADD COLUMN model_file_expires_at DATETIME")
-            )
+        if "agent_evaluations" in table_names:
+            agent_columns = {
+                column["name"] for column in inspector.get_columns("agent_evaluations")
+            }
+            if "details" not in agent_columns:
+                connection.execute(
+                    text("ALTER TABLE agent_evaluations ADD COLUMN details JSON DEFAULT '{}'")
+                )
 
 
 async def get_db() -> AsyncGenerator[Session, None]:

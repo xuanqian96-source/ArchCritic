@@ -6,6 +6,7 @@ from httpx import ASGITransport, AsyncClient
 from app.config import get_settings
 from app.database import init_db
 from app.main import app
+from app.routers.submissions import build_feedback_items
 
 
 @pytest.mark.asyncio
@@ -219,3 +220,17 @@ def test_wiki_loader_accepts_obsidian_dimension_folder(tmp_path):
     assert len(references) == 1
     assert references[0]["title"] == "功能与流线"
     assert references[0]["excerpt"] == "入口、门厅和展厅应形成清晰连续的进入过程。"
+
+
+def test_feedback_items_only_link_current_report_references():
+    """确认反馈只会关联本次报告真实存在的知识编号。"""
+    feedback = build_feedback_items(
+        {
+            "must_fix": ["入口到达关系需要补充 [K2] [K9] [K2]。"],
+            "should_improve": ["说明文字可继续精简。"],
+        },
+        [{"reference_id": "K2", "title": "入口组织"}],
+    )
+
+    assert feedback["must_fix"][0]["reference_ids"] == ["K2"]
+    assert feedback["should_improve"][0]["reference_ids"] == []

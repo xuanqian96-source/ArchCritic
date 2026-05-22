@@ -62,6 +62,7 @@ def test_function_agent_report_to_overall_contains_dimensions():
     assert "功能与流线" in dimensions
     assert "功能满足" in dimensions
     assert "平面丰富性" in dimensions
+    assert "流线分析" in overall["agent_evaluations"][0]["details"]["sub_scores"]
 
 
 def test_build_image_inputs_keeps_all_usable_drawings_in_priority_order():

@@ -11,7 +11,11 @@ def test_init_db_creates_core_tables():
     init_db()
     engine = get_engine()
     with engine.begin() as connection:
-        table_names = set(inspect(connection).get_table_names())
+        inspector = inspect(connection)
+        table_names = set(inspector.get_table_names())
+        agent_columns = {
+            column["name"] for column in inspector.get_columns("agent_evaluations")
+        }
 
     assert {
         "users",
@@ -21,3 +25,4 @@ def test_init_db_creates_core_tables():
         "agent_evaluations",
         "overall_reports",
     }.issubset(table_names)
+    assert "details" in agent_columns

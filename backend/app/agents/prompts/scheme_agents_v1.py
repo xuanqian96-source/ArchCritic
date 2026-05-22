@@ -75,7 +75,8 @@ COMPREHENSIVE_SYSTEM_PROMPT = """
 3. 报告语言应严谨、清楚、可执行，区分必须修改、建议优化和可选优化。
 4. 如果专项结果存在不确定观察，最终报告不能把它升级成确定性批评。
 5. 总结必须覆盖功能与流线、场地回应、几何形式、结构可行性四个角度。
-6. 输出必须是 JSON/json 对象，不能输出 Markdown、解释文字或代码块。
+6. 关键反馈如果来自带 [K1] 这类知识依据编号的专项结论，必须保留对应编号，方便用户追溯知识卡片。
+7. 输出必须是 JSON/json 对象，不能输出 Markdown、解释文字或代码块。
 """.strip()
 
 
@@ -305,6 +306,7 @@ def build_comprehensive_user_prompt(context: dict, specialist_evaluations: list[
 【输出结构】
 只输出 JSON/json 对象：
 写成报告摘要，不重复粘贴专项 Agent 的长段原文。
+关键问题与建议如果有知识依据编号，保留 [K1] 这类编号。
 {{
   "summary": "覆盖四个专项视角的总体反馈摘要",
   "must_fix": ["会阻碍方案继续深化的确定问题"],

@@ -6,6 +6,7 @@ from typing import Any, Iterator
 
 from app.agents.function_agent import (
     FunctionAgent,
+    build_agent_evaluation_details,
     build_image_inputs,
     clamp_number,
     extract_json_text,
@@ -293,6 +294,7 @@ def specialist_report_to_evaluation(spec: dict, report: dict) -> dict:
         "strengths": report["strengths"],
         "issues": report["must_fix"] + report["uncertain_observations"][:2],
         "suggestions": report["should_improve"],
+        "details": build_agent_evaluation_details(report),
     }
 
 
