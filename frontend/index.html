@@ -311,6 +311,31 @@ body {
     transition: var(--transition);
 }
 .btn-massive:hover { background: var(--color-accent); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(37,99,235,0.2); }
+.ai-action-row {
+    display: grid;
+    grid-template-columns: 1fr 132px;
+    gap: 8px;
+    align-items: stretch;
+    margin-top: auto;
+}
+.ai-action-row .btn-massive { margin-top: 0; }
+.model-select {
+    min-width: 0;
+    padding: 0 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: #FAFAFA;
+    color: var(--text-main);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    transition: var(--transition);
+}
+.model-select:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    background: #FFF;
+}
 
 /* Center Viewport */
 .center-panel {
@@ -540,6 +565,12 @@ body {
     font-weight: 500;
 }
 .chat-avatar.user { background: var(--color-accent); }
+.chat-avatar.agent-pixel-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 0;
+    background: transparent;
+}
 .chat-bubble {
     max-width: calc(100% - 42px);
     padding: 10px 12px;
@@ -598,9 +629,30 @@ body {
 .btn-tiny:hover { border-color: var(--text-main); color: var(--text-main); }
 
 /* Timeline */
-.timeline { display: flex; gap: 12px; position: relative; align-items: center; flex: 1; padding-left: 12px; margin-top: 0;}
+.timeline,
+.agent-cards {
+    min-width: 0;
+    scrollbar-width: thin;
+    scrollbar-color: #B9C0CB #ECEEF2;
+}
+.timeline::-webkit-scrollbar,
+.agent-cards::-webkit-scrollbar { height: 8px; }
+.timeline::-webkit-scrollbar-track,
+.agent-cards::-webkit-scrollbar-track {
+    background: #ECEEF2;
+    border-radius: 999px;
+}
+.timeline::-webkit-scrollbar-thumb,
+.agent-cards::-webkit-scrollbar-thumb {
+    background: #B9C0CB;
+    border-radius: 999px;
+    border: 1px solid #ECEEF2;
+}
+.timeline::-webkit-scrollbar-thumb:hover,
+.agent-cards::-webkit-scrollbar-thumb:hover { background: #949EAE; }
+.timeline { display: flex; gap: 12px; position: relative; align-items: center; flex: 1; overflow-x: auto; overflow-y: hidden; padding: 0 0 9px 12px; margin-top: 0;}
 .timeline::before { content:''; position:absolute; top: 50%; left:12px; right:0; height:1px; margin-top: -0.5px; background:var(--border-color); z-index:0;}
-.timeline-point { position:relative; z-index:1; display:flex; flex-direction:row; align-items:center; gap:6px; background: #FAFAFA; padding: 0 4px;}
+.timeline-point { position:relative; z-index:1; display:flex; flex-direction:row; align-items:center; gap:6px; flex-shrink: 0; background: #FAFAFA; padding: 0 4px;}
 .t-dot { width: 8px; height: 8px; background: #FFF; border: 1px solid #CCC; border-radius: 50%; flex-shrink: 0;}
 .t-active { border-color: var(--color-primary); background: var(--color-primary); box-shadow: 0 0 0 3px rgba(26,26,26,0.1);}
 .t-title { font-size: 11px; font-weight: 500; margin-bottom: 0; white-space: nowrap;}
@@ -608,13 +660,17 @@ body {
 .timeline-point.active .t-title { color: var(--color-primary); }
 
 /* Agent Cards */
-.agent-cards { display: flex; gap: 8px; align-items: center; overflow-x: auto; scrollbar-width: none; }
-.agent-cards::-webkit-scrollbar { display: none; }
-.agent-card { padding: 5px 9px; border: 1px solid var(--border-color); border-radius: 6px; display: flex; flex-direction: row; align-items: center; gap: 7px; background: #FFF; transition: var(--transition); white-space: nowrap;}
+.agent-cards { display: flex; gap: 8px; align-items: center; flex: 1; overflow-x: auto; overflow-y: hidden; padding-bottom: 8px; }
+.agent-card { min-height: 58px; padding: 5px 10px 5px 7px; border: 1px solid var(--border-color); border-radius: 6px; display: flex; flex-direction: row; align-items: center; gap: 8px; background: #FFF; transition: var(--transition); white-space: nowrap;}
 .agent-card:hover { border-color: #CCC; }
 .agent-card.working {
     border-color: var(--color-accent);
     box-shadow: 0 0 0 3px rgba(0, 92, 255, 0.08);
+}
+.agent-card.completed {
+    border-color: #78B488;
+    background: #F1FBF4;
+    box-shadow: inset 0 0 0 1px rgba(92, 159, 108, 0.12);
 }
 .agent-avatar {
     width: 22px;
@@ -628,24 +684,351 @@ body {
     font-size: 11px;
     font-weight: 600;
 }
-.agent-card.working .agent-avatar {
-    background: var(--color-accent);
-    color: #FFF;
-    animation: agentBreath 1.4s ease-in-out infinite;
+.agent-avatar.pixel-agent {
+    --skin: #F2C08C;
+    --hair: #433126;
+    --shirt: #5877B7;
+    --shirt-dark: #36508A;
+    --accent: #C8E1FF;
+    --paper: #FFF0C8;
+    --pixel-green: #397F4C;
+    position: relative;
+    width: 46px;
+    height: 48px;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: transparent;
+    filter: drop-shadow(0 1px 0 rgba(38, 32, 25, 0.18));
+    image-rendering: pixelated;
 }
-@keyframes agentBreath {
-    0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(0, 92, 255, 0.26); }
-    50% { transform: scale(1.12); box-shadow: 0 0 0 7px rgba(0, 92, 255, 0); }
+.agent-card.working .agent-avatar.pixel-agent {
+    animation: pixelAgentBob 0.82s steps(2, end) infinite;
+}
+.agent-card.completed .agent-avatar.pixel-agent {
+    filter: drop-shadow(0 1px 0 rgba(38, 32, 25, 0.18)) drop-shadow(0 0 4px rgba(72, 161, 94, 0.24));
+}
+.pixel-shadow {
+    position: absolute;
+    left: 7px;
+    bottom: 2px;
+    width: 31px;
+    height: 5px;
+    background: rgba(58, 48, 39, 0.18);
+    box-shadow: 3px 1px 0 rgba(58, 48, 39, 0.1);
+}
+.pixel-hat,
+.pixel-hair,
+.pixel-head,
+.pixel-body,
+.pixel-arm,
+.pixel-leg,
+.pixel-tool,
+.pixel-pen {
+    content: "";
+    position: absolute;
+}
+.pixel-hair {
+    left: 13px;
+    top: 6px;
+    width: 19px;
+    height: 12px;
+    background: var(--hair);
+    box-shadow: -3px 3px 0 var(--hair), 3px 3px 0 var(--hair);
+}
+.pixel-head {
+    left: 14px;
+    top: 11px;
+    width: 17px;
+    height: 15px;
+    background: var(--skin);
+    box-shadow: -3px 4px 0 var(--skin), 3px 4px 0 var(--skin);
+}
+.pixel-head::before {
+    content: "";
+    position: absolute;
+    left: 3px;
+    top: 6px;
+    width: 3px;
+    height: 3px;
+    background: #30211A;
+    box-shadow: 8px 0 0 #30211A, 4px 5px 0 #AF6F52;
+}
+.pixel-body {
+    left: 12px;
+    top: 28px;
+    width: 22px;
+    height: 13px;
+    background: var(--shirt);
+    box-shadow: -3px 3px 0 var(--shirt-dark), 3px 3px 0 var(--shirt-dark), 0 6px 0 var(--shirt-dark);
+}
+.pixel-arm {
+    top: 30px;
+    width: 5px;
+    height: 12px;
+    background: var(--skin);
+}
+.pixel-arm-left { left: 7px; box-shadow: 0 -3px 0 var(--shirt); }
+.pixel-arm-right { right: 7px; box-shadow: 0 -3px 0 var(--shirt); }
+.pixel-leg {
+    top: 41px;
+    width: 7px;
+    height: 5px;
+    background: #3B322D;
+}
+.pixel-leg-left { left: 15px; }
+.pixel-leg-right { left: 25px; }
+.pixel-tool {
+    right: 2px;
+    bottom: 8px;
+    width: 18px;
+    height: 13px;
+    background: var(--paper);
+    border: 0;
+    color: transparent;
+    box-shadow: inset -3px 0 0 rgba(119, 87, 53, 0.18), 0 2px 0 #8B6947;
+}
+.pixel-agent.activity-read .pixel-tool {
+    width: 20px;
+    height: 12px;
+    background: linear-gradient(90deg, var(--paper) 0 45%, #8B6947 45% 55%, #FFF6D7 55% 100%);
+    transform-origin: 50% 100%;
+}
+.pixel-agent.activity-write .pixel-tool::before,
+.pixel-agent.activity-read .pixel-tool::before {
+    content: "";
+    position: absolute;
+    left: 3px;
+    top: 3px;
+    width: 3px;
+    height: 2px;
+    background: #B98B57;
+    box-shadow: 5px 0 0 #B98B57, 0 4px 0 #B98B57, 7px 4px 0 #B98B57;
+}
+.pixel-pen {
+    right: 10px;
+    bottom: 18px;
+    width: 3px;
+    height: 13px;
+    background: #293D64;
+    transform: rotate(31deg);
+    transform-origin: 50% 100%;
+}
+.pixel-agent.activity-read .pixel-pen {
+    display: none;
+}
+.pixel-function { --hair: #2A3550; --shirt: #567DD1; --shirt-dark: #2D4D92; --accent: #8FD6FF; }
+.pixel-function .pixel-head::after {
+    content: "";
+    position: absolute;
+    left: 1px;
+    top: 4px;
+    width: 6px;
+    height: 5px;
+    border: 2px solid #466386;
+    box-shadow: 8px 0 0 -1px var(--skin), 8px 0 0 0 #466386;
+}
+.pixel-site { --hair: #5C3A21; --shirt: #5C9D55; --shirt-dark: #326D44; --paper: #DDF2B0; }
+.pixel-site .pixel-hat {
+    left: 9px;
+    top: 2px;
+    width: 26px;
+    height: 5px;
+    background: #7BA55B;
+    box-shadow: 4px -3px 0 #5E8245, 8px -3px 0 #5E8245;
+}
+.pixel-site .pixel-tool::after {
+    content: "";
+    position: absolute;
+    left: 2px;
+    top: 2px;
+    width: 4px;
+    height: 3px;
+    background: #6BA05B;
+    box-shadow: 9px 4px 0 #6BA05B;
+}
+.pixel-form { --hair: #A74328; --shirt: #D77D42; --shirt-dark: #944923; --paper: #FFE0B2; }
+.pixel-form .pixel-hair {
+    left: 10px;
+    width: 25px;
+    height: 14px;
+    box-shadow: -3px 4px 0 var(--hair), 3px 4px 0 var(--hair), 0 9px 0 var(--hair);
+}
+.pixel-form .pixel-tool {
+    clip-path: polygon(0 0, 100% 0, 78% 100%, 0 100%);
+}
+.pixel-structure { --hair: #2F2B28; --shirt: #8E79C4; --shirt-dark: #5A468C; --paper: #DCE8FF; }
+.pixel-structure .pixel-hat {
+    left: 11px;
+    top: 1px;
+    width: 23px;
+    height: 7px;
+    background: #F1C64A;
+    box-shadow: -3px 5px 0 #C28B28, 3px 5px 0 #C28B28;
+}
+.pixel-structure .pixel-body::before {
+    content: "";
+    position: absolute;
+    left: 9px;
+    top: 0;
+    width: 3px;
+    height: 19px;
+    background: #EBD767;
+}
+.pixel-review { --hair: #513622; --shirt: #477F7A; --shirt-dark: #2D5552; --paper: #FFF2A9; }
+.pixel-review .pixel-hat {
+    left: 14px;
+    top: 1px;
+    width: 17px;
+    height: 6px;
+    background: #6E4A2B;
+    box-shadow: -4px 5px 0 #6E4A2B, 4px 5px 0 #6E4A2B;
+}
+.pixel-review .pixel-tool {
+    width: 22px;
+    box-shadow: 0 -4px 0 #E8D59A, inset -3px 0 0 rgba(119, 87, 53, 0.18), 0 2px 0 #8B6947;
+}
+.agent-card.working .pixel-agent.activity-read .pixel-tool {
+    animation: pixelPageTurn 0.94s steps(2, end) infinite;
+}
+.agent-card.working .pixel-agent.activity-write .pixel-pen {
+    animation: pixelWrite 0.44s steps(2, end) infinite;
+}
+.agent-card.working .pixel-agent.activity-write .pixel-arm-right {
+    animation: pixelWriteHand 0.44s steps(2, end) infinite;
+}
+@keyframes pixelAgentBob {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-2px); }
+}
+@keyframes pixelPageTurn {
+    0%, 100% { transform: skewX(0); }
+    50% { transform: skewX(-9deg) translateY(-1px); }
+}
+@keyframes pixelWrite {
+    0%, 100% { transform: rotate(31deg) translate(0, 0); }
+    50% { transform: rotate(43deg) translate(2px, -1px); }
+}
+@keyframes pixelWriteHand {
+    0%, 100% { transform: translate(0, 0); }
+    50% { transform: translate(2px, -1px); }
 }
 .agent-name { font-size: 11px; font-weight: 500; }
 .agent-status { font-size: 10px; color: var(--text-muted); }
-.agent-status.done { color: var(--color-primary); }
+.agent-status.done { color: #2F8B4A; }
 .agent-status.thinking { color: var(--color-accent); font-style: italic;}
 
 /* Knowledge Links */
 .knowledge-links { display: flex; flex-direction: column; gap: 10px; }
-.knowledge-item { font-size: 12px; color: var(--text-muted); text-decoration: none; transition: var(--transition); border-bottom: 1px dashed transparent; display: inline-block; width: max-content; }
-.knowledge-item:hover { color: var(--color-accent); border-bottom-color: var(--color-accent); }
+.knowledge-item {
+    width: 100%;
+    padding: 10px 11px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: #FAFAFA;
+    color: var(--text-main);
+    text-align: left;
+    font: inherit;
+    font-size: 12px;
+    line-height: 1.45;
+    cursor: pointer;
+    transition: var(--transition);
+}
+.knowledge-item:hover { border-color: var(--color-accent); background: #FFF; }
+.knowledge-item .knowledge-type {
+    display: block;
+    margin-bottom: 3px;
+    color: var(--text-muted);
+    font-size: 10px;
+}
+.knowledge-item .knowledge-title {
+    display: block;
+    font-weight: 500;
+}
+.knowledge-card-backdrop {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(17,17,17,0.28);
+    backdrop-filter: blur(4px);
+    z-index: 220;
+}
+.knowledge-card-backdrop.open { display: flex; }
+.knowledge-card-panel {
+    width: min(680px, calc(100vw - 32px));
+    max-height: calc(100vh - 40px);
+    margin: 20px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    background: #FFF;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.16);
+}
+.knowledge-card-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--border-color);
+}
+.knowledge-card-kicker {
+    color: var(--text-muted);
+    font-size: 11px;
+    margin-bottom: 5px;
+}
+.knowledge-card-title {
+    font-size: 17px;
+    font-weight: 500;
+}
+.knowledge-card-close {
+    width: 30px;
+    height: 30px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: #FFF;
+    cursor: pointer;
+}
+.knowledge-card-body {
+    overflow-y: auto;
+    padding: 18px 20px 22px;
+    font-size: 12px;
+    line-height: 1.75;
+    color: #444;
+}
+.knowledge-card-body h3 {
+    margin: 14px 0 8px;
+    color: var(--text-main);
+    font-size: 13px;
+    font-weight: 600;
+}
+.knowledge-card-body p { margin-bottom: 10px; }
+.knowledge-card-body ul { padding-left: 18px; margin-bottom: 12px; }
+.knowledge-card-meta {
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    border-left: 3px solid var(--color-accent);
+    background: #F7F9FE;
+    color: #344054;
+}
+.knowledge-card-images {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+    margin: 0 0 14px;
+}
+.knowledge-card-images img {
+    width: 100%;
+    max-height: 220px;
+    object-fit: contain;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: #F8F8F8;
+}
 
 .upload-modal {
     position: fixed;
@@ -783,7 +1166,14 @@ body {
 动线组织：底层公共服务，二层会议及活动，做到动静分区。</textarea>
                 </div>
 
-                <button class="btn btn-massive">开始 AI 评图</button>
+                <div class="ai-action-row">
+                    <button class="btn btn-massive">开始 AI 评图</button>
+                    <select class="model-select" id="modelSelect" aria-label="选择模型">
+                        <option value="dashscope|qwen3.6-plus" selected>千问 Qwen</option>
+                        <option value="gemini|gemini-2.5-flash">Gemini 2.5</option>
+                        <option value="mock|demo">演示模式</option>
+                    </select>
+                </div>
             </aside>
 
             <!-- 2.2 中间图纸区 -->
@@ -962,24 +1352,29 @@ body {
                 </div>
                 <div class="agent-cards">
                     <div class="agent-card">
-                        <span class="agent-avatar">场</span>
+                        <span class="agent-avatar pixel-agent pixel-function activity-write" aria-label="功能与流线Agent头像"><span class="pixel-shadow"></span><span class="pixel-hat"></span><span class="pixel-hair"></span><span class="pixel-head"></span><span class="pixel-body"></span><span class="pixel-arm pixel-arm-left"></span><span class="pixel-arm pixel-arm-right"></span><span class="pixel-leg pixel-leg-left"></span><span class="pixel-leg pixel-leg-right"></span><span class="pixel-tool"></span><span class="pixel-pen"></span></span>
+                        <span class="agent-name">功能与流线Agent</span>
+                        <span class="agent-status thinking">待调用</span>
+                    </div>
+                    <div class="agent-card">
+                        <span class="agent-avatar pixel-agent pixel-site activity-read" aria-label="场地Agent头像"><span class="pixel-shadow"></span><span class="pixel-hat"></span><span class="pixel-hair"></span><span class="pixel-head"></span><span class="pixel-body"></span><span class="pixel-arm pixel-arm-left"></span><span class="pixel-arm pixel-arm-right"></span><span class="pixel-leg pixel-leg-left"></span><span class="pixel-leg pixel-leg-right"></span><span class="pixel-tool"></span><span class="pixel-pen"></span></span>
                         <span class="agent-name">场地Agent</span>
-                        <span class="agent-status done">已完成 (1问题)</span>
+                        <span class="agent-status thinking">待调用</span>
                     </div>
                     <div class="agent-card">
-                        <span class="agent-avatar">功</span>
-                        <span class="agent-name">功能Agent</span>
-                        <span class="agent-status done">已完成 (2建议)</span>
+                        <span class="agent-avatar pixel-agent pixel-form activity-write" aria-label="几何形式Agent头像"><span class="pixel-shadow"></span><span class="pixel-hat"></span><span class="pixel-hair"></span><span class="pixel-head"></span><span class="pixel-body"></span><span class="pixel-arm pixel-arm-left"></span><span class="pixel-arm pixel-arm-right"></span><span class="pixel-leg pixel-leg-left"></span><span class="pixel-leg pixel-leg-right"></span><span class="pixel-tool"></span><span class="pixel-pen"></span></span>
+                        <span class="agent-name">几何形式Agent</span>
+                        <span class="agent-status thinking">待调用</span>
                     </div>
                     <div class="agent-card">
-                        <span class="agent-avatar">结</span>
+                        <span class="agent-avatar pixel-agent pixel-structure activity-write" aria-label="结构Agent头像"><span class="pixel-shadow"></span><span class="pixel-hat"></span><span class="pixel-hair"></span><span class="pixel-head"></span><span class="pixel-body"></span><span class="pixel-arm pixel-arm-left"></span><span class="pixel-arm pixel-arm-right"></span><span class="pixel-leg pixel-leg-left"></span><span class="pixel-leg pixel-leg-right"></span><span class="pixel-tool"></span><span class="pixel-pen"></span></span>
                         <span class="agent-name">结构Agent</span>
-                        <span class="agent-status done">已完成 (1建议)</span>
+                        <span class="agent-status thinking">待调用</span>
                     </div>
                     <div class="agent-card">
-                        <span class="agent-avatar">形</span>
-                        <span class="agent-name">形式Agent</span>
-                        <span class="agent-status thinking">分析中...</span>
+                        <span class="agent-avatar pixel-agent pixel-review activity-read" aria-label="综合评审Agent头像"><span class="pixel-shadow"></span><span class="pixel-hat"></span><span class="pixel-hair"></span><span class="pixel-head"></span><span class="pixel-body"></span><span class="pixel-arm pixel-arm-left"></span><span class="pixel-arm pixel-arm-right"></span><span class="pixel-leg pixel-leg-left"></span><span class="pixel-leg pixel-leg-right"></span><span class="pixel-tool"></span><span class="pixel-pen"></span></span>
+                        <span class="agent-name">综合评审Agent</span>
+                        <span class="agent-status thinking">待调用</span>
                     </div>
                 </div>
             </div>
@@ -1001,13 +1396,25 @@ body {
             </label>
             <label>
                 本地图片
-                <input type="file" id="drawingFileInput" accept="image/png,image/jpeg,image/webp,image/gif">
+                <input type="file" id="drawingFileInput" accept="image/png,image/jpeg,image/webp,image/gif" multiple>
             </label>
             <div class="upload-actions">
                 <button class="btn btn-outline" id="cancelUploadBtn" type="button">取消</button>
                 <button class="btn btn-primary" id="confirmUploadBtn" type="button">上传并查看</button>
             </div>
             <p class="upload-status" id="uploadStatus"></p>
+        </div>
+    </div>
+    <div class="knowledge-card-backdrop" id="knowledgeCardModal" aria-hidden="true">
+        <div class="knowledge-card-panel" role="dialog" aria-modal="true" aria-labelledby="knowledgeCardTitle">
+            <div class="knowledge-card-header">
+                <div>
+                    <div class="knowledge-card-kicker" id="knowledgeCardKicker">知识依据</div>
+                    <div class="knowledge-card-title" id="knowledgeCardTitle">知识卡片</div>
+                </div>
+                <button class="knowledge-card-close" id="knowledgeCardClose" type="button" aria-label="关闭">×</button>
+            </div>
+            <div class="knowledge-card-body" id="knowledgeCardBody"></div>
         </div>
     </div>
     <script>
@@ -1022,10 +1429,19 @@ document.addEventListener('DOMContentLoaded', () => {
         analysis: '分析图',
         render: '效果图'
     };
+    const schemeAgents = [
+        { type: 'function_agent', name: '功能与流线Agent', badge: '功', avatar: 'pixel-function', activity: 'activity-write' },
+        { type: 'site_agent', name: '场地Agent', badge: '场', avatar: 'pixel-site', activity: 'activity-read' },
+        { type: 'form_agent', name: '几何形式Agent', badge: '形', avatar: 'pixel-form', activity: 'activity-write' },
+        { type: 'structure_agent', name: '结构Agent', badge: '结', avatar: 'pixel-structure', activity: 'activity-write' },
+        { type: 'review_agent', name: '综合评审Agent', badge: '综', avatar: 'pixel-review', activity: 'activity-read' }
+    ];
     const uploadedDrawings = {};
     let activeDrawingType = 'site';
     let currentProjectId = null;
     let currentProjectSignature = '';
+    let currentKnowledgeReferences = [];
+    const WORKSPACE_STATE_KEY = 'archcritic:last-workspace';
 
     /* 1. Stage Selector Toggle */
     const stageBtns = document.querySelectorAll('.stage-btn');
@@ -1045,6 +1461,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const confirmUploadBtn = document.getElementById('confirmUploadBtn');
     const cancelUploadBtn = document.getElementById('cancelUploadBtn');
     const uploadStatus = document.getElementById('uploadStatus');
+    const modelSelect = document.getElementById('modelSelect');
+    const knowledgeCardModal = document.getElementById('knowledgeCardModal');
+    const knowledgeCardClose = document.getElementById('knowledgeCardClose');
+    const knowledgeCardKicker = document.getElementById('knowledgeCardKicker');
+    const knowledgeCardTitle = document.getElementById('knowledgeCardTitle');
+    const knowledgeCardBody = document.getElementById('knowledgeCardBody');
     const thumbnails = document.querySelectorAll('.thumbnail');
     const vpTabs = document.querySelectorAll('.viewport-header .tab');
     const image = document.querySelector('.blueprint-image');
@@ -1078,7 +1500,7 @@ document.addEventListener('DOMContentLoaded', () => {
             tab.classList.toggle('active', tab.dataset.drawingType === type);
         });
 
-        const uploaded = uploadedDrawings[type];
+        const uploaded = getDrawingItems(type)[0];
         image.src = uploaded ? uploaded.url : defaultBlueprintSrc;
         image.alt = uploaded ? uploaded.name : defaultBlueprintAlt;
         emptyNotice.style.display = uploaded ? 'none' : 'block';
@@ -1089,12 +1511,23 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function markUploaded(type) {
+        const count = getDrawingItems(type).length;
         thumbnails.forEach(item => {
             if (item.dataset.drawingType === type) {
                 item.classList.add('has-file');
-                item.textContent = drawingLabels[type];
+                item.textContent = count > 1 ? `${drawingLabels[type]} (${count})` : drawingLabels[type];
             }
         });
+    }
+
+    function getDrawingItems(type) {
+        return Array.isArray(uploadedDrawings[type]) ? uploadedDrawings[type] : [];
+    }
+
+    function listDrawingEntries() {
+        return Object.entries(uploadedDrawings).flatMap(([type, items]) =>
+            (Array.isArray(items) ? items : []).map(item => [type, item])
+        );
     }
 
     uploadZone.addEventListener('click', openUploadModal);
@@ -1104,30 +1537,36 @@ document.addEventListener('DOMContentLoaded', () => {
             closeUploadModal();
         }
     });
+    knowledgeCardClose.addEventListener('click', closeKnowledgeCard);
+    knowledgeCardModal.addEventListener('click', (event) => {
+        if (event.target === knowledgeCardModal) {
+            closeKnowledgeCard();
+        }
+    });
 
     confirmUploadBtn.addEventListener('click', () => {
-        const file = drawingFileInput.files[0];
+        const files = Array.from(drawingFileInput.files || []);
         const type = uploadDrawingType.value;
-        if (!file) {
-            uploadStatus.textContent = '请先选择一张本地图片。';
+        if (files.length === 0) {
+            uploadStatus.textContent = '请先选择本地图片。';
             return;
         }
-        if (!file.type.startsWith('image/')) {
+        if (files.some(file => !file.type.startsWith('image/'))) {
             uploadStatus.textContent = '当前只支持图片文件。';
             return;
         }
 
-        if (uploadedDrawings[type]?.url?.startsWith('blob:')) {
-            URL.revokeObjectURL(uploadedDrawings[type].url);
-        }
-        uploadedDrawings[type] = {
-            name: file.name,
-            url: URL.createObjectURL(file),
-            file
-        };
+        uploadedDrawings[type] = [
+            ...getDrawingItems(type),
+            ...files.map(file => ({
+                name: file.name,
+                url: URL.createObjectURL(file),
+                file
+            }))
+        ];
         markUploaded(type);
         setActiveDrawingType(type);
-        uploadZoneText.textContent = `已上传：${drawingLabels[type]} / ${file.name}`;
+        uploadZoneText.textContent = `已加入：${drawingLabels[type]} ${files.length} 张，待评图图纸共 ${listDrawingEntries().length} 张`;
         closeUploadModal();
     });
 
@@ -1166,12 +1605,43 @@ document.addEventListener('DOMContentLoaded', () => {
         aiChatThread.innerHTML = '';
     }
 
-    function appendChatMessage(role, text, meta = '') {
+    function getAgentProfile(agentType) {
+        return schemeAgents.find(agent => agent.type === agentType) || null;
+    }
+
+    function renderAgentAvatar(agentType, fallback = 'AI', forChat = false) {
+        const agent = getAgentProfile(agentType);
+        if (!agent) {
+            return forChat
+                ? `<div class="chat-avatar">${escapeHtml(fallback)}</div>`
+                : `<span class="agent-avatar">${escapeHtml(fallback)}</span>`;
+        }
+        const classes = forChat
+            ? `chat-avatar agent-pixel-avatar agent-avatar pixel-agent ${agent.avatar} ${agent.activity}`
+            : `agent-avatar pixel-agent ${agent.avatar} ${agent.activity}`;
+        return `
+            <span class="${classes}" aria-label="${escapeHtml(agent.name)}头像">
+                <span class="pixel-shadow"></span>
+                <span class="pixel-hat"></span>
+                <span class="pixel-hair"></span>
+                <span class="pixel-head"></span>
+                <span class="pixel-body"></span>
+                <span class="pixel-arm pixel-arm-left"></span>
+                <span class="pixel-arm pixel-arm-right"></span>
+                <span class="pixel-leg pixel-leg-left"></span>
+                <span class="pixel-leg pixel-leg-right"></span>
+                <span class="pixel-tool"></span>
+                <span class="pixel-pen"></span>
+            </span>
+        `;
+    }
+
+    function appendChatMessage(role, text, meta = '', agentType = '') {
         const avatarText = role === 'user' ? '你' : role === 'error' ? '!' : 'AI';
         const message = document.createElement('div');
         message.className = `chat-message ${role === 'error' ? 'error' : role === 'system' ? 'system' : ''}`;
         message.innerHTML = `
-            <div class="chat-avatar ${role === 'user' ? 'user' : ''}">${escapeHtml(avatarText)}</div>
+            ${agentType ? renderAgentAvatar(agentType, avatarText, true) : `<div class="chat-avatar ${role === 'user' ? 'user' : ''}">${escapeHtml(avatarText)}</div>`}
             <div class="chat-bubble">
                 ${escapeHtml(text)}
                 ${meta ? `<div class="chat-meta">${escapeHtml(meta)}</div>` : ''}
@@ -1273,8 +1743,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function prepareImageFileForUpload(file) {
-        const maxSize = 1600;
-        const shouldCompress = file.size > 700 * 1024;
+        const maxSize = 4000;
+        const maxOriginalBytes = 12 * 1024 * 1024;
+        const shouldCompress = file.size > maxOriginalBytes;
         if (!shouldCompress || file.type === 'image/gif') {
             return file;
         }
@@ -1289,12 +1760,12 @@ document.addEventListener('DOMContentLoaded', () => {
         context.fillRect(0, 0, canvas.width, canvas.height);
         context.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.72));
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
         if (!blob || blob.size >= file.size) {
             return file;
         }
         const newName = file.name.replace(/\.[^.]+$/, '') + '-compressed.jpg';
-        appendChatMessage('assistant', `已压缩图纸：${file.name}，从 ${(file.size / 1024 / 1024).toFixed(1)}MB 降至 ${(blob.size / 1024 / 1024).toFixed(1)}MB。`, '图纸预处理');
+        appendChatMessage('assistant', `已生成高清评图图纸：${file.name}，从 ${(file.size / 1024 / 1024).toFixed(1)}MB 控制到 ${(blob.size / 1024 / 1024).toFixed(1)}MB，最长边约 ${maxSize}px。`, '图纸预处理');
         return new File([blob], newName, { type: 'image/jpeg' });
     }
 
@@ -1303,7 +1774,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function uploadDrawingFiles(submissionId) {
-        const entries = Object.entries(uploadedDrawings).filter(([, item]) => item.file);
+        const entries = listDrawingEntries().filter(([, item]) => item.file);
         const savedFiles = [];
         for (const [type, item] of entries) {
             appendChatMessage('assistant', `正在处理 ${drawingLabels[type]}：${item.name}`, '图纸上传');
@@ -1327,7 +1798,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (item.url?.startsWith('blob:')) {
                 URL.revokeObjectURL(item.url);
             }
-            uploadedDrawings[type] = {
+            const storedItems = getDrawingItems(type);
+            const itemIndex = storedItems.indexOf(item);
+            storedItems[itemIndex] = {
                 ...item,
                 url: `${API_BASE}${savedFile.file_url}`,
                 serverUrl: savedFile.file_url,
@@ -1338,8 +1811,18 @@ document.addEventListener('DOMContentLoaded', () => {
         return savedFiles;
     }
 
-    async function evaluateSubmissionStream(submissionId) {
-        const response = await fetch(`${API_BASE}/api/submissions/${submissionId}/evaluate-stream`);
+    function getSelectedModelConfig() {
+        const [provider, model] = (modelSelect.value || 'dashscope|qwen3.6-plus').split('|');
+        const label = modelSelect.options[modelSelect.selectedIndex]?.textContent || model;
+        return { provider, model, label };
+    }
+
+    async function evaluateSubmissionStream(submissionId, modelConfig) {
+        const query = new URLSearchParams({
+            provider: modelConfig.provider,
+            model: modelConfig.model
+        });
+        const response = await fetch(`${API_BASE}/api/submissions/${submissionId}/evaluate-stream?${query.toString()}`);
         if (!response.ok || !response.body) {
             const error = await response.json().catch(() => ({}));
             throw new Error(error.detail || '流式评图接口请求失败。');
@@ -1350,6 +1833,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let buffer = '';
         let finalReport = null;
         let liveMessage = null;
+        const completedAgentTypes = new Set();
 
         function appendLiveText(text) {
             if (!liveMessage) {
@@ -1368,6 +1852,20 @@ document.addEventListener('DOMContentLoaded', () => {
             const payload = JSON.parse(dataText);
             if (eventName === 'status') {
                 appendChatMessage('assistant', payload.message, '评图进度');
+            } else if (eventName === 'agent') {
+                if (payload.status === 'done') {
+                    completedAgentTypes.add(payload.agent_type);
+                }
+                renderAgentWorkingState(
+                    payload.status === 'start' ? payload.agent_type : '',
+                    completedAgentTypes
+                );
+                appendChatMessage(
+                    'assistant',
+                    payload.message,
+                    payload.agent_name || 'Agent 状态',
+                    payload.agent_type
+                );
             } else if (eventName === 'delta') {
                 appendLiveText(payload.text);
             } else if (eventName === 'reasoning') {
@@ -1426,6 +1924,93 @@ document.addEventListener('DOMContentLoaded', () => {
         }[char]));
     }
 
+    function markdownToCardHtml(markdown) {
+        const lines = String(markdown || '').split('\n');
+        const html = [];
+        let listOpen = false;
+
+        function closeList() {
+            if (listOpen) {
+                html.push('</ul>');
+                listOpen = false;
+            }
+        }
+
+        lines.forEach(rawLine => {
+            const line = rawLine.trim();
+            if (!line || line.startsWith('![')) {
+                closeList();
+                return;
+            }
+            if (line.startsWith('# ')) {
+                closeList();
+                return;
+            }
+            if (line.startsWith('## ')) {
+                closeList();
+                html.push(`<h3>${escapeHtml(line.replace(/^##\s+/, ''))}</h3>`);
+                return;
+            }
+            if (line.startsWith('### ')) {
+                closeList();
+                html.push(`<h3>${escapeHtml(line.replace(/^###\s+/, ''))}</h3>`);
+                return;
+            }
+            if (line.startsWith('- ')) {
+                if (!listOpen) {
+                    html.push('<ul>');
+                    listOpen = true;
+                }
+                html.push(`<li>${formatKnowledgeInline(line.replace(/^-\s+/, ''))}</li>`);
+                return;
+            }
+            closeList();
+            html.push(`<p>${formatKnowledgeInline(line)}</p>`);
+        });
+        closeList();
+        return html.join('');
+    }
+
+    function formatKnowledgeInline(text) {
+        return escapeHtml(text)
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\[\[([^\]|#]+)(#[^\]|]+)?\|([^\]]+)\]\]/g, '$3')
+            .replace(/\[\[([^\]|#]+)(#[^\]|]+)?\]\]/g, (_, target) => target.split('/').pop().replace(/\.md$/, ''));
+    }
+
+    function renderKnowledgeImages(images) {
+        if (!images || images.length === 0) return '';
+        return `
+            <div class="knowledge-card-images">
+                ${images.map(image => `
+                    <img src="${API_BASE}${image.url}" alt="${escapeHtml(image.name || '知识库图片')}" loading="lazy">
+                `).join('')}
+            </div>
+        `;
+    }
+
+    function openKnowledgeCard(index) {
+        const item = currentKnowledgeReferences[index];
+        if (!item) return;
+        knowledgeCardKicker.textContent = `${item.reference_id || 'K?'} · ${item.source_type || '知识依据'} / ${item.dimension || '通用依据'}`;
+        knowledgeCardTitle.textContent = item.title || '知识卡片';
+        const displayContent = item.display_content || item.content || item.excerpt || '';
+        knowledgeCardBody.innerHTML = `
+            <div class="knowledge-card-meta">
+                <strong>可引用观点：</strong>${escapeHtml(item.excerpt || '暂无摘录。')}
+            </div>
+            ${renderKnowledgeImages(item.image_urls)}
+            ${markdownToCardHtml(displayContent)}
+        `;
+        knowledgeCardModal.classList.add('open');
+        knowledgeCardModal.setAttribute('aria-hidden', 'false');
+    }
+
+    function closeKnowledgeCard() {
+        knowledgeCardModal.classList.remove('open');
+        knowledgeCardModal.setAttribute('aria-hidden', 'true');
+    }
+
     function buildProjectSignature(projectName, buildingType, ownerName, grade) {
         return [projectName, buildingType, ownerName, grade].join('|');
     }
@@ -1445,6 +2030,97 @@ document.addEventListener('DOMContentLoaded', () => {
         currentProjectId = project.id;
         currentProjectSignature = signature;
         return project;
+    }
+
+    function saveWorkspaceState(projectId, submissionId) {
+        localStorage.setItem(WORKSPACE_STATE_KEY, JSON.stringify({
+            projectId,
+            submissionId,
+            savedAt: new Date().toISOString()
+        }));
+    }
+
+    function setStageByValue(stageValue) {
+        const matched = Array.from(stageBtns).find(button => button.dataset.stage === stageValue);
+        if (!matched) return;
+        stageBtns.forEach(button => button.classList.toggle('active', button === matched));
+    }
+
+    function applyProjectToForm(project) {
+        document.getElementById('projectNameInput').value = project.name || '';
+        document.getElementById('buildingTypeInput').value = project.building_type || '';
+        document.getElementById('ownerInput').value = project.owner_name || '';
+        document.getElementById('gradeInput').value = project.grade || '';
+        document.getElementById('navProjectName').textContent = project.name || '-';
+        document.getElementById('navBuildingType').textContent = project.building_type || '-';
+        currentProjectId = project.id;
+        currentProjectSignature = buildProjectSignature(
+            project.name || '',
+            project.building_type || '',
+            project.owner_name || '',
+            project.grade || ''
+        );
+    }
+
+    function applySubmissionToForm(submission) {
+        document.getElementById('descriptionInput').value = submission.description || '';
+        document.getElementById('navDesignStage').textContent = submission.design_stage || '-';
+        setStageByValue(submission.design_stage);
+    }
+
+    function renderServerDrawings(files) {
+        listDrawingEntries().forEach(([, item]) => {
+            if (item.url?.startsWith('blob:')) URL.revokeObjectURL(item.url);
+        });
+        Object.keys(uploadedDrawings).forEach(key => delete uploadedDrawings[key]);
+
+        files.forEach(file => {
+            uploadedDrawings[file.drawing_type] = [
+                ...getDrawingItems(file.drawing_type),
+                {
+                name: file.original_name,
+                url: `${API_BASE}${file.file_url}`,
+                serverUrl: file.file_url,
+                file: null
+                }
+            ];
+            markUploaded(file.drawing_type);
+        });
+
+        const firstType = files[0]?.drawing_type || activeDrawingType;
+        setActiveDrawingType(firstType);
+        uploadZoneText.textContent = files.length > 0
+            ? `已恢复：${files.length} 张已保存图纸`
+            : '拖拽或点击上传大图';
+    }
+
+    async function restoreLastWorkspaceState() {
+        const rawState = localStorage.getItem(WORKSPACE_STATE_KEY);
+        if (!rawState) return;
+
+        try {
+            const state = JSON.parse(rawState);
+            if (!state.projectId) return;
+            const project = await requestJson(`${API_BASE}/api/projects/${state.projectId}`);
+            applyProjectToForm(project);
+            const history = await requestJson(`${API_BASE}/api/projects/${state.projectId}/history`);
+            const targetSubmissionId = state.submissionId || history.at(-1)?.id;
+            if (!targetSubmissionId) return;
+
+            const submission = await requestJson(`${API_BASE}/api/submissions/${targetSubmissionId}`);
+            applySubmissionToForm(submission);
+            const files = await requestJson(`${API_BASE}/api/submissions/${targetSubmissionId}/files`);
+            renderServerDrawings(files);
+            await renderHistory(state.projectId, targetSubmissionId);
+
+            const report = await requestJson(`${API_BASE}/api/submissions/${targetSubmissionId}/report`).catch(() => null);
+            if (report) {
+                renderReport(report, false);
+                appendChatMessage('assistant', `已恢复上次评图：提交 #${targetSubmissionId}。`, '工作台恢复');
+            }
+        } catch (error) {
+            console.warn('恢复上次工作台失败', error);
+        }
     }
 
     function renderScore(report) {
@@ -1515,75 +2191,68 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderKnowledgeReferences(references) {
         const container = document.querySelector('.knowledge-links');
+        currentKnowledgeReferences = references || [];
         if (!references || references.length === 0) {
             container.innerHTML = '<span class="knowledge-item">↳ 暂无知识库依据，等待 Wiki 补充</span>';
             return;
         }
 
-        container.innerHTML = references.map(item => `
-            <a href="#" class="knowledge-item" title="${escapeHtml(item.excerpt)}">
-                ↳ ${escapeHtml(item.source_type)}：${escapeHtml(item.title)}
-            </a>
+        container.innerHTML = references.map((item, index) => `
+            <button type="button" class="knowledge-item" data-knowledge-index="${index}" title="${escapeHtml(item.excerpt)}">
+                <span class="knowledge-type">${escapeHtml(item.reference_id || `K${index + 1}`)} · ${escapeHtml(item.source_type)} / ${escapeHtml(item.dimension)}</span>
+                <span class="knowledge-title">${escapeHtml(item.title)}</span>
+            </button>
         `).join('');
+        container.querySelectorAll('.knowledge-item').forEach(button => {
+            button.addEventListener('click', () => {
+                openKnowledgeCard(Number(button.dataset.knowledgeIndex));
+            });
+        });
     }
 
     function renderAgentCards(report) {
         const container = document.querySelector('.agent-cards');
         const items = report.agent_evaluations || [];
         if (items.length === 0) {
-            container.innerHTML = '<div class="agent-card"><span class="agent-avatar">A</span><span class="agent-name">Agent</span><span class="agent-status thinking">等待分析</span></div>';
+            renderAgentWorkingState('');
             return;
         }
 
-        const agentNames = {
-            site_agent: '场地Agent',
-            function_agent: '功能Agent',
-            form_agent: '形式Agent',
-            structure_agent: '结构Agent',
-            openai_general: '综合Agent'
-        };
-        const avatarMap = {
-            site_agent: '场',
-            function_agent: '功',
-            form_agent: '形',
-            structure_agent: '结',
-            openai_general: '综'
-        };
         container.innerHTML = items.map(item => `
-            <div class="agent-card">
-                <span class="agent-avatar">${escapeHtml(avatarMap[item.agent_type] || String(item.dimension || 'A').slice(0, 1))}</span>
-                <span class="agent-name">${escapeHtml(agentNames[item.agent_type] || item.dimension)}</span>
+            <div class="agent-card completed">
+                ${renderAgentAvatar(item.agent_type, String(item.dimension || 'A').slice(0, 1))}
+                <span class="agent-name">${escapeHtml(getAgentProfile(item.agent_type)?.name || item.dimension)}</span>
                 <span class="agent-status done">已完成 (${Math.round(item.score ?? 0)}分)</span>
             </div>
         `).join('');
     }
 
-    function renderAgentWorkingState(activeType = 'function_agent') {
+    function renderAgentWorkingState(activeType = 'function_agent', completedTypes = new Set()) {
         const container = document.querySelector('.agent-cards');
-        const agents = [
-            { type: 'site_agent', name: '场地Agent', avatar: '场' },
-            { type: 'function_agent', name: '功能Agent', avatar: '功' },
-            { type: 'structure_agent', name: '结构Agent', avatar: '结' },
-            { type: 'form_agent', name: '形式Agent', avatar: '形' }
-        ];
-        container.innerHTML = agents.map(agent => {
+        container.innerHTML = schemeAgents.map(agent => {
             const working = agent.type === activeType;
+            const completed = completedTypes.has(agent.type);
+            const statusText = working ? '分析中...' : completed ? '已完成' : '待调用';
+            const statusClass = working ? 'thinking' : completed ? 'done' : '';
             return `
-                <div class="agent-card ${working ? 'working' : ''}">
-                    <span class="agent-avatar">${agent.avatar}</span>
+                <div class="agent-card ${working ? 'working' : ''} ${completed ? 'completed' : ''}">
+                    ${renderAgentAvatar(agent.type, agent.badge)}
                     <span class="agent-name">${agent.name}</span>
-                    <span class="agent-status ${working ? 'thinking' : ''}">${working ? '分析中...' : '待调用'}</span>
+                    <span class="agent-status ${statusClass}">${statusText}</span>
                 </div>
             `;
         }).join('');
     }
 
-    function renderReport(report) {
+    function renderReport(report, announce = true) {
         renderScore(report);
         renderDimensionScores(report);
         renderSuggestions(report);
         renderKnowledgeReferences(report.references || []);
         renderAgentCards(report);
+        if (!announce) {
+            return;
+        }
         appendChatMessage('assistant', `评图完成。总分 ${Math.round(report.overall_score ?? 0)}，等级 ${report.grade || '-'}。`, '报告生成');
         if (report.summary) {
             appendChatMessage('assistant', report.summary, '评判依据摘要');
@@ -1622,6 +2291,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const grade = document.getElementById('gradeInput').value.trim() || '未填写年级';
         const description = document.getElementById('descriptionInput').value.trim() || '未填写设计说明。';
         const designStage = document.querySelector('.stage-btn.active')?.dataset.stage || '方案阶段';
+        const modelConfig = getSelectedModelConfig();
 
         document.getElementById('navProjectName').textContent = projectName;
         document.getElementById('navBuildingType').textContent = buildingType;
@@ -1631,7 +2301,7 @@ document.addEventListener('DOMContentLoaded', () => {
         resetChat();
         setRightPanelView('chat');
         renderAgentWorkingState('function_agent');
-        appendChatMessage('user', `提交项目：${projectName}。图纸类型：${drawingLabels[activeDrawingType] || activeDrawingType}。`, '开始评图');
+        appendChatMessage('user', `提交项目：${projectName}。待评图图纸 ${listDrawingEntries().length} 张。`, `开始评图 / ${modelConfig.label}`);
         appendChatMessage('assistant', '准备连接后端，并保存本次方案提交。', '系统检查');
         try {
             updateButtonProgress('连接后端...', 10);
@@ -1652,11 +2322,12 @@ document.addEventListener('DOMContentLoaded', () => {
             updateButtonProgress('上传图纸...', 80);
             const savedFiles = await uploadDrawingFiles(submission.id);
             appendChatMessage('assistant', `图纸上传完成，共 ${savedFiles.length} 张。`, '80%');
-            updateButtonProgress('调用百炼模型...', 90);
-            appendChatMessage('assistant', '正在调用 Qwen3.6-Plus，右侧将实时显示模型输出。', '90%');
-            const report = await evaluateSubmissionStream(submission.id);
+            updateButtonProgress('调用模型...', 90);
+            appendChatMessage('assistant', `正在调用 ${modelConfig.label}，右侧将显示各 Agent 的评审进度。`, '90%');
+            const report = await evaluateSubmissionStream(submission.id, modelConfig);
             renderReport(report);
             await renderHistory(project.id, submission.id);
+            saveWorkspaceState(project.id, submission.id);
             setActiveDrawingType(activeDrawingType);
             uploadZoneText.textContent = savedFiles.length > 0
                 ? `已评图：提交 #${submission.id} / ${savedFiles.length} 张图纸`
@@ -1720,6 +2391,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     image.style.cursor = 'grab';
     setActiveDrawingType(activeDrawingType);
+    restoreLastWorkspaceState();
 
 });
 

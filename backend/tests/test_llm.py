@@ -35,3 +35,32 @@ def test_dashscope_provider_requires_api_key(monkeypatch):
         raise AssertionError("未配置百炼 Key 时不应创建模型客户端。")
     finally:
         get_settings.cache_clear()
+
+
+def test_gemini_provider_requires_api_key(monkeypatch):
+    """确认 Gemini 模型未配置 Key 时会给出明确提示。"""
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+    get_settings.cache_clear()
+
+    try:
+        get_llm_client("gemini")
+    except ValueError as exc:
+        assert "Gemini API Key" in str(exc)
+    else:
+        raise AssertionError("未配置 Gemini Key 时不应创建模型客户端。")
+    finally:
+        get_settings.cache_clear()
+
+
+def test_gemini_provider_disables_extra_thinking(monkeypatch):
+    """确认 Gemini 使用较短评图输出时不会把 JSON 提前截断。"""
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+    get_settings.cache_clear()
+
+    try:
+        client = get_llm_client("gemini")
+        assert client.reasoning_effort == "none"
+    finally:
+        get_settings.cache_clear()

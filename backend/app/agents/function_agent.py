@@ -75,8 +75,9 @@ def build_function_agent_context(
         "design_stage": submission.design_stage,
         "description": submission.description,
         "task_book_summary": build_task_book_summary(project.building_type),
+        "drawing_scope": build_drawing_scope(drawings),
         "drawings": drawings,
-        "references": references[:5],
+        "references": references[:6],
         "missing_information": missing_information,
     }
 
@@ -89,6 +90,24 @@ def build_task_book_summary(building_type: str) -> str:
             "主要公共活动空间、辅助管理空间、卫生间、后勤服务和必要交通空间。"
         )
     return "当前未上传完整任务书，只能按建筑类型和设计说明核对基础功能。"
+
+
+def build_drawing_scope(drawings: list[dict]) -> str:
+    """说明本次评图只能依据哪些图纸范围。"""
+    if not drawings:
+        return "本次未上传图纸，只能依据文字说明做低置信度评价。"
+    drawing_types = {item["drawing_type"] for item in drawings}
+    if drawing_types == {"plan"}:
+        return (
+            "本次只上传了一层平面图。只能评价这一层中可见的功能、分区和流线；"
+            "不得把未上传的其他楼层、剖面、总平面或完整任务书缺失直接判为方案错误。"
+        )
+    if "plan" in drawing_types:
+        return (
+            "本次包含平面图，可评价已上传图纸中能确认的功能、分区和流线；"
+            "未上传楼层或未显示区域只能作为缺失信息提示。"
+        )
+    return "本次未上传平面图，功能分区和流线判断需要降低置信度。"
 
 
 def get_upload_file_size(file_url: str) -> int:
@@ -114,6 +133,7 @@ class FunctionAgent:
         max_tokens: int = 1200,
         image_detail: str = "low",
         extra_body: dict | None = None,
+        reasoning_effort: str | None = None,
     ) -> None:
         """保存 OpenAI 客户端和模型名称。"""
         self.client = client
@@ -122,6 +142,7 @@ class FunctionAgent:
         self.max_tokens = max_tokens
         self.image_detail = image_detail
         self.extra_body = extra_body
+        self.reasoning_effort = reasoning_effort
 
     def run(self, context: dict) -> dict:
         """调用模型并返回校验后的报告数据。"""
@@ -145,6 +166,8 @@ class FunctionAgent:
         }
         if self.extra_body:
             create_kwargs["extra_body"] = self.extra_body
+        if self.reasoning_effort:
+            create_kwargs["reasoning_effort"] = self.reasoning_effort
 
         try:
             response = self.client.chat.completions.create(**create_kwargs)
@@ -158,12 +181,10 @@ class FunctionAgent:
         return validate_function_agent_output(raw_output)
 
 
-def build_image_inputs(
-    drawings: list[dict], limit: int = 1, detail: str = "low"
-) -> list[dict]:
-    """把本地图纸转换为模型可读取的图片输入。"""
+def build_image_inputs(drawings: list[dict], detail: str = "low") -> list[dict]:
+    """把所有可用图纸转换为模型可读取的图片输入。"""
     image_inputs = []
-    for item in drawings[:limit]:
+    for item in sort_drawings_for_model(drawings):
         if item.get("usable_for_model") is False:
             continue
         image_url = item.get("model_file_url") or file_url_to_data_url(
@@ -181,6 +202,15 @@ def build_image_inputs(
             }
         )
     return image_inputs
+
+
+def sort_drawings_for_model(drawings: list[dict]) -> list[dict]:
+    """按评图重要性排序图纸，优先让模型先看到平面图。"""
+    priority = {"plan": 0, "site": 1, "analysis": 2, "render": 3}
+    return sorted(
+        drawings,
+        key=lambda item: priority.get(str(item.get("drawing_type", "")), 99),
+    )
 
 
 def build_response_format(mode: str) -> dict:
@@ -252,10 +282,9 @@ def validate_function_agent_output(raw_output: dict) -> dict:
         "grade": score_to_grade(overall_score),
         "confidence": raw_output.get("confidence", "medium"),
         "summary": safe_text(raw_output.get("summary"), "已完成当前提交的功能与流线评图。"),
+        "observed_facts": safe_observed_facts(raw_output.get("observed_facts")),
         "sub_scores": normalized_sub_scores,
-        "must_fix": safe_list(
-            raw_output.get("must_fix"), build_issue_fallback(normalized_sub_scores)
-        ),
+        "must_fix": build_must_fix_list(raw_output, normalized_sub_scores),
         "should_improve": safe_list(raw_output.get("should_improve"), "建议进一步明确功能分区与主要流线。"),
         "optional_improvements": safe_list(raw_output.get("optional_improvements"), "可以补充更清晰的分析图。"),
         "strengths": safe_list(raw_output.get("strengths"), "方案已具备可继续深化的基础。"),
@@ -317,8 +346,17 @@ def build_issue_fallback(sub_scores: dict) -> str:
     return f"{weakest_name}需要优先修改：{reason[:120]}"
 
 
-def function_agent_report_to_overall(report: dict) -> dict:
+def build_must_fix_list(raw_output: dict, sub_scores: dict) -> list[str]:
+    """兼容旧模型输出，同时允许模型明确返回空的必须修改项。"""
+    if "must_fix" in raw_output:
+        return safe_list(raw_output.get("must_fix"), "", allow_empty=True)
+    return safe_list(raw_output.get("must_fix"), build_issue_fallback(sub_scores))
+
+
+def function_agent_report_to_overall(report: dict, context: dict | None = None) -> dict:
     """把功能 Agent 结果转换成当前前端使用的综合报告结构。"""
+    if context:
+        report = demote_conflicting_must_fix(report, context)
     sub_scores = report["sub_scores"]
     issues = report["must_fix"] + report.get("uncertain_observations", [])[:2]
     suggestions = report["should_improve"]
@@ -356,6 +394,50 @@ def function_agent_report_to_overall(report: dict) -> dict:
     }
 
 
+def demote_conflicting_must_fix(report: dict, context: dict) -> dict:
+    """把与设计说明冲突的“必须修改”降级为不确定观察。"""
+    description = str(context.get("description", ""))
+    observed_facts = report.get("observed_facts") or {}
+    confirmed_keywords = {
+        "楼梯": ["楼梯", "楼电梯", "交通核心"],
+        "电梯": ["电梯", "楼电梯", "交通核心"],
+        "卫生间": ["卫生间", "洗手间", "厕所", "公共卫生间"],
+        "车库入口": ["车库入口", "地下车库", "车行入口"],
+        "报告厅": ["报告厅", "Auditorium"],
+        "服务台": ["服务台", "吧台", "Service Desk"],
+    }
+    negative_words = ("缺少", "缺乏", "未见", "没有", "无明确", "不明确", "需补充")
+    kept_must_fix = []
+    uncertain = list(report.get("uncertain_observations", []))
+    for issue in report.get("must_fix", []):
+        issue_text = str(issue)
+        conflict_keyword = next(
+            (
+                label
+                for label, aliases in confirmed_keywords.items()
+                if label in issue_text
+                and any(word in issue_text for word in negative_words)
+                and (
+                    any(alias in description for alias in aliases)
+                    or observed_fact_blocks_must_fix(observed_facts, label)
+                )
+            ),
+            "",
+        )
+        if conflict_keyword:
+            uncertain.append(
+                f"{conflict_keyword}与设计说明存在冲突：设计说明提到已设置，但模型在图纸中未能高置信确认；应补充更清楚的标注或局部图，不宜直接判为必须修改。"
+            )
+        else:
+            kept_must_fix.append(issue_text)
+
+    return {
+        **report,
+        "must_fix": kept_must_fix[:4],
+        "uncertain_observations": uncertain[:5],
+    }
+
+
 def clamp_number(value: Any, minimum: float, maximum: float) -> float:
     """把模型返回的分数限制在合法区间。"""
     try:
@@ -390,3 +472,22 @@ def safe_list(value: Any, fallback: str, allow_empty: bool = False) -> list[str]
         if items or allow_empty:
             return items[:5]
     return [] if allow_empty else [fallback]
+
+
+def safe_observed_facts(value: Any) -> dict:
+    """保证图纸事实识别字段是可读字典。"""
+    if not isinstance(value, dict):
+        return {}
+    return {
+        str(key).strip(): str(item).strip()
+        for key, item in value.items()
+        if str(key).strip() and str(item).strip()
+    }
+
+
+def observed_fact_blocks_must_fix(observed_facts: dict, label: str) -> bool:
+    """判断事实识别是否不支持把对应内容写入必须修改。"""
+    fact = str(observed_facts.get(label, ""))
+    if "未看见" in fact:
+        return False
+    return "看见" in fact or "不确定" in fact

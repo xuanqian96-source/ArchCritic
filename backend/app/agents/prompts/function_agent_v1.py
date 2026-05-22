@@ -13,6 +13,11 @@ FUNCTION_AGENT_SYSTEM_PROMPT = """
 5. 平面丰富性只评价平面空间组织、公共空间层次、几何多样性和趣味性，不评价立面表皮风格。
 6. 问题必须具体，尽量指出对应的建筑学原因，例如功能缺漏、分区错位、动静干扰、服务流线穿越公共区、入口不清楚、平面过于机械等。
 7. 建议必须可执行，适合学生下一轮修改。
+8. 必须遵守已上传图纸范围：如果只上传一层平面图，不得因为其他楼层、剖面、总图或完整任务书缺失，就断言整栋建筑功能缺失。
+9. 对图纸中看不清、标注无法确认、可能与设计说明冲突的内容，应写入 uncertain_observations，不得直接放入 must_fix。
+10. 每条确定性评价都应尽量引用知识库依据编号，例如 [K1]；没有依据时要说明来自图纸观察或设计说明。
+11. 输出评价前，必须先在 observed_facts 中列出你从图纸或设计说明确认的事实。只有 observed_facts 中高置信确认的问题，才允许进入 must_fix。
+12. 对“楼梯、电梯、卫生间、入口、车库入口、报告厅、服务台”等大功能，如果设计说明明确说有而图纸看不清，应写为“不确定”，不得写成“缺少”。
 
 四项评分：
 - 功能满足：0-30 分，评价是否满足任务书和基础功能要求。
@@ -28,8 +33,7 @@ FUNCTION_AGENT_JSON_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
     "required": [
-        "overall_score",
-        "grade",
+        "observed_facts",
         "confidence",
         "summary",
         "sub_scores",
@@ -41,8 +45,20 @@ FUNCTION_AGENT_JSON_SCHEMA = {
         "uncertain_observations",
     ],
     "properties": {
-        "overall_score": {"type": "number", "minimum": 0, "maximum": 100},
-        "grade": {"type": "string"},
+        "observed_facts": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["楼梯", "电梯", "卫生间", "主入口", "车库入口", "报告厅", "服务台"],
+            "properties": {
+                "楼梯": {"type": "string"},
+                "电梯": {"type": "string"},
+                "卫生间": {"type": "string"},
+                "主入口": {"type": "string"},
+                "车库入口": {"type": "string"},
+                "报告厅": {"type": "string"},
+                "服务台": {"type": "string"},
+            },
+        },
         "confidence": {
             "type": "string",
             "enum": ["high", "medium", "low"],
@@ -62,7 +78,7 @@ FUNCTION_AGENT_JSON_SCHEMA = {
         "must_fix": {
             "type": "array",
             "items": {"type": "string"},
-            "minItems": 1,
+            "minItems": 0,
             "maxItems": 4,
         },
         "should_improve": {
@@ -113,7 +129,7 @@ FUNCTION_AGENT_JSON_SCHEMA = {
 def build_function_agent_user_prompt(context: dict) -> str:
     """把提交上下文整理成模型可读的用户提示词。"""
     references = "\n".join(
-        f"- [{item.get('source_type', '依据')}] {item.get('title', '')}：{item.get('excerpt', '')}"
+        build_reference_prompt_item(item)
         for item in context["references"]
     )
     drawings = "\n".join(
@@ -141,6 +157,9 @@ def build_function_agent_user_prompt(context: dict) -> str:
 【已上传图纸】
 {drawings or "未上传图纸。"}
 
+【评判边界】
+{context["drawing_scope"]}
+
 【知识库依据】
 {references or "当前没有可用知识库依据。"}
 
@@ -152,19 +171,44 @@ def build_function_agent_user_prompt(context: dict) -> str:
 2. 必须使用下面这个字段结构，字段名不能改：
 
 {{
-  "scores": {{
-    "功能满足": 0-30,
-    "功能分区": 0-25,
-    "流线分析": 0-25,
-    "平面丰富性": 0-20
+  "observed_facts": {{
+    "楼梯": "看见/未看见/不确定，并说明依据",
+    "电梯": "看见/未看见/不确定，并说明依据",
+    "卫生间": "看见/未看见/不确定，并说明依据",
+    "主入口": "看见/未看见/不确定，并说明依据",
+    "车库入口": "看见/未看见/不确定，并说明依据",
+    "报告厅": "看见/未看见/不确定，并说明依据",
+    "服务台": "看见/未看见/不确定，并说明依据"
   }},
-  "comments": {{
-    "功能满足": "依据设计说明/图纸/知识库写具体评价",
-    "功能分区": "依据设计说明/图纸/知识库写具体评价",
-    "流线分析": "依据设计说明/图纸/知识库写具体评价",
-    "平面丰富性": "依据设计说明/图纸/知识库写具体评价"
+  "confidence": "high/medium/low",
+  "summary": "总体评价摘要",
+  "sub_scores": {{
+    "功能满足": {{
+      "score": 0-30,
+      "max_score": 30,
+      "reason": "依据设计说明/图纸/知识库写具体评价",
+      "evidence": "说明来自图纸观察、设计说明或知识库编号"
+    }},
+    "功能分区": {{
+      "score": 0-25,
+      "max_score": 25,
+      "reason": "依据设计说明/图纸/知识库写具体评价",
+      "evidence": "说明来自图纸观察、设计说明或知识库编号"
+    }},
+    "流线分析": {{
+      "score": 0-25,
+      "max_score": 25,
+      "reason": "依据设计说明/图纸/知识库写具体评价",
+      "evidence": "说明来自图纸观察、设计说明或知识库编号"
+    }},
+    "平面丰富性": {{
+      "score": 0-20,
+      "max_score": 20,
+      "reason": "依据设计说明/图纸/知识库写具体评价",
+      "evidence": "说明来自图纸观察、设计说明或知识库编号"
+    }}
   }},
-  "must_fix": ["必须修改的问题，1-3条"],
+  "must_fix": ["已确认的必须修改问题，0-3条；不确定内容不要写在这里"],
   "should_improve": ["建议优化的问题，1-3条"],
   "optional_improvements": ["可选优化，1-3条"],
   "strengths": ["当前优势，1-3条"],
@@ -172,7 +216,29 @@ def build_function_agent_user_prompt(context: dict) -> str:
   "uncertain_observations": ["图纸中看不清或只能推测的内容"]
 }}
 
-3. comments 里的每一项都要写出建筑学理由，不能只写“较好”“一般”。
+3. sub_scores 里的每一项都要写出建筑学理由和证据，不能只写“较好”“一般”。
 4. 如果无法从图纸确认，不要写成确定事实，放入 uncertain_observations。
-5. scores 四项相加应等于总分；不要单独输出 total_score。
+5. 如果只上传一层平面图，只评价一层能确认的功能和流线；其他楼层缺失只能写入 missing_information。
+6. 涉及知识库的判断需要写出依据编号，例如“依据 [K1]，入口与门厅应形成连续过程”。
+7. must_fix 只能写“图纸和说明均支持”的确定问题；如果设计说明说有但图纸看不清，必须放入 uncertain_observations。
+8. 四项 score 相加应等于总分；不要单独输出 total_score、overall_score 或 grade。
 """.strip()
+
+
+def build_reference_prompt_item(item: dict) -> str:
+    """把知识卡片压缩成模型可引用的依据块。"""
+    content = (item.get("content") or item.get("excerpt") or "").strip()
+    compact_content = "\n".join(
+        line.strip()
+        for line in content.splitlines()
+        if line.strip() and not line.strip().startswith("---")
+    )
+    if len(compact_content) > 700:
+        compact_content = compact_content[:700].rstrip() + "..."
+    return (
+        f"- {item.get('reference_id') or 'K?'} "
+        f"[{item.get('source_type', '依据')} / {item.get('dimension', '通用依据')}] "
+        f"{item.get('title', '')}\n"
+        f"  可引用观点：{item.get('excerpt', '')}\n"
+        f"  卡片内容：{compact_content}"
+    )

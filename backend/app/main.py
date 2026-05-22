@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import get_settings
 from app.database import init_db
 from app.routers import health, projects, submissions
+from app.wiki import resolve_wiki_root
 
 
 @asynccontextmanager
@@ -46,4 +47,9 @@ app.mount(
     "/uploads",
     StaticFiles(directory=settings.upload_dir, check_dir=False),
     name="uploads",
+)
+app.mount(
+    "/wiki-assets",
+    StaticFiles(directory=resolve_wiki_root(settings.wiki_dir), check_dir=False),
+    name="wiki-assets",
 )

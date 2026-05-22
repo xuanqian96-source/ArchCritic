@@ -1,6 +1,7 @@
 """验证功能与流线 Agent 的输出校验和报告转换。"""
 
 from app.agents.function_agent import (
+    build_image_inputs,
     function_agent_report_to_overall,
     validate_function_agent_output,
 )
@@ -61,6 +62,65 @@ def test_function_agent_report_to_overall_contains_dimensions():
     assert "功能与流线" in dimensions
     assert "功能满足" in dimensions
     assert "平面丰富性" in dimensions
+
+
+def test_build_image_inputs_keeps_all_usable_drawings_in_priority_order():
+    """确认模型输入不再只取第一张图，并优先发送平面图。"""
+    image_inputs = build_image_inputs(
+        [
+            {
+                "drawing_type": "render",
+                "model_file_url": "oss://render.png",
+                "file_url": "/uploads/render.png",
+                "mime_type": "image/png",
+                "usable_for_model": True,
+            },
+            {
+                "drawing_type": "plan",
+                "model_file_url": "oss://plan.png",
+                "file_url": "/uploads/plan.png",
+                "mime_type": "image/png",
+                "usable_for_model": True,
+            },
+            {
+                "drawing_type": "site",
+                "model_file_url": "oss://site.png",
+                "file_url": "/uploads/site.png",
+                "mime_type": "image/png",
+                "usable_for_model": True,
+            },
+        ]
+    )
+
+    urls = [item["image_url"]["url"] for item in image_inputs]
+    assert urls == ["oss://plan.png", "oss://site.png", "oss://render.png"]
+
+
+def test_observed_facts_demote_uncertain_must_fix():
+    """确认不确定观察不会被保留为必须修改。"""
+    report = validate_function_agent_output(
+        {
+            "summary": "功能与流线评价完成。",
+            "confidence": "medium",
+            "observed_facts": {"楼梯": "不确定，图纸局部较模糊。"},
+            "sub_scores": {
+                "功能满足": {"score": 20, "reason": "基础功能基本完整", "evidence": "图纸观察"},
+                "功能分区": {"score": 20, "reason": "分区较清楚", "evidence": "图纸观察"},
+                "流线分析": {"score": 18, "reason": "主流线基本成立", "evidence": "图纸观察"},
+                "平面丰富性": {"score": 14, "reason": "有空间变化", "evidence": "平面组织"},
+            },
+            "must_fix": ["缺少楼梯，需要补充垂直交通。"],
+            "should_improve": ["公共空间节点可以更明确。"],
+            "optional_improvements": ["补充任务书核对表。"],
+            "strengths": ["功能框架较完整。"],
+            "missing_information": [],
+            "uncertain_observations": [],
+        }
+    )
+    overall = function_agent_report_to_overall(report, {"description": ""})
+
+    assert overall["must_fix"] == []
+    assert "楼梯与设计说明存在冲突" in overall["agent_evaluations"][0]["issues"][0]
 
 
 def test_build_model_error_message_for_quota():

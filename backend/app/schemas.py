@@ -70,11 +70,15 @@ class DrawingFileRead(BaseModel):
 class KnowledgeReferenceRead(BaseModel):
     """返回知识库依据时使用的数据结构。"""
 
+    reference_id: str = ""
     title: str
     source_type: str
     excerpt: str
     dimension: str
     path: str
+    content: str = ""
+    display_content: str = ""
+    image_urls: list[dict] = Field(default_factory=list)
 
 
 class AgentEvaluationRead(BaseModel):

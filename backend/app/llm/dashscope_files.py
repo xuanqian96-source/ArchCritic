@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import time
 from uuid import uuid4
 
 import httpx
@@ -16,6 +17,10 @@ class DashScopeUploadResult:
     expires_at: datetime
 
 
+class DashScopeUploadError(RuntimeError):
+    """百炼临时文件上传失败时抛出的明确异常。"""
+
+
 class DashScopeFileClient:
     """负责获取上传策略并把本地文件上传到百炼临时存储。"""
 
@@ -27,15 +32,25 @@ class DashScopeFileClient:
 
     def upload_file(self, file_path: Path, mime_type: str) -> DashScopeUploadResult:
         """上传本地文件并返回模型可访问的 oss:// URL。"""
-        with httpx.Client(timeout=self.timeout_seconds, trust_env=False) as client:
-            policy = self._get_policy(client)
-            object_key = self._build_object_key(policy["upload_dir"], file_path.name)
-            self._post_file(client, policy, object_key, file_path, mime_type)
+        last_error: Exception | None = None
+        for attempt in range(1, 4):
+            try:
+                with httpx.Client(timeout=self.timeout_seconds, trust_env=False) as client:
+                    policy = self._get_policy(client)
+                    object_key = self._build_object_key(policy["upload_dir"], file_path.name)
+                    self._post_file(client, policy, object_key, file_path, mime_type)
+                return DashScopeUploadResult(
+                    url=f"oss://{object_key}",
+                    expires_at=datetime.now(timezone.utc) + timedelta(hours=47),
+                )
+            except Exception as exc:
+                last_error = exc
+                if attempt < 3:
+                    time.sleep(attempt)
 
-        return DashScopeUploadResult(
-            url=f"oss://{object_key}",
-            expires_at=datetime.now(timezone.utc) + timedelta(hours=47),
-        )
+        raise DashScopeUploadError(
+            f"图纸上传到百炼临时存储失败，已重试 3 次：{last_error}"
+        ) from last_error
 
     def _get_policy(self, client: httpx.Client) -> dict:
         """获取百炼临时 OSS 上传策略。"""

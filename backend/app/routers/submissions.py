@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
@@ -22,11 +22,19 @@ from app.agents.prompts.function_agent_v1 import (
     FUNCTION_AGENT_SYSTEM_PROMPT,
     build_function_agent_user_prompt,
 )
+from app.agents.scheme_review import is_scheme_stage, iter_scheme_review_events
 from app.config import get_settings
 from app.database import get_db, get_session_factory
 from app.llm.client import get_llm_client
-from app.llm.dashscope_files import DashScopeFileClient
-from app.models import AgentEvaluation, DrawingFile, OverallReport, Project, Submission
+from app.llm.dashscope_files import DashScopeFileClient, DashScopeUploadError
+from app.models import (
+    AgentEvaluation,
+    DrawingFile,
+    OverallReport,
+    Project,
+    ReportReference,
+    Submission,
+)
 from app.schemas import (
     DrawingFileRead,
     KnowledgeReferenceRead,
@@ -38,6 +46,7 @@ from app.wiki import load_wiki_references
 
 router = APIRouter(prefix="/api/submissions", tags=["submissions"])
 
+REAL_LLM_PROVIDERS = {"openai", "dashscope", "gemini"}
 ALLOWED_DRAWING_TYPES = {"site", "plan", "analysis", "render"}
 ALLOWED_IMAGE_TYPES = {
     "image/png": ".png",
@@ -45,7 +54,35 @@ ALLOWED_IMAGE_TYPES = {
     "image/webp": ".webp",
     "image/gif": ".gif",
 }
-MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+MAX_UPLOAD_BYTES = 15 * 1024 * 1024
+MODEL_PRESETS = {
+    "mock": "demo",
+    "openai": "gpt-4o-mini",
+    "dashscope": "qwen3.6-plus",
+    "gemini": "gemini-2.5-flash",
+}
+
+
+def resolve_llm_provider(provider: str | None) -> str:
+    """解析本次评图使用的模型来源，默认读取环境配置。"""
+    settings = get_settings()
+    resolved = (provider or settings.llm_provider).strip().lower()
+    aliases = {"qwen": "dashscope", "qianwen": "dashscope", "bailian": "dashscope"}
+    resolved = aliases.get(resolved, resolved)
+    if resolved not in {"mock", *REAL_LLM_PROVIDERS}:
+        raise HTTPException(status_code=400, detail=f"暂不支持的模型来源：{resolved}。")
+    return resolved
+
+
+def resolve_llm_model(provider: str, model: str | None) -> str:
+    """解析本次评图使用的模型名称。"""
+    cleaned_model = (model or "").strip()
+    if cleaned_model:
+        return cleaned_model
+    settings = get_settings()
+    if provider == settings.llm_provider.lower() and settings.llm_model:
+        return settings.llm_model
+    return MODEL_PRESETS.get(provider, settings.llm_model)
 
 
 @router.post("", response_model=SubmissionRead, status_code=status.HTTP_201_CREATED)
@@ -109,7 +146,7 @@ async def upload_submission_file(
     if not content:
         raise HTTPException(status_code=400, detail="上传文件不能为空。")
     if len(content) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=400, detail="单张图片不能超过 10MB。")
+        raise HTTPException(status_code=400, detail="单张图片不能超过 15MB。")
 
     settings = get_settings()
     relative_path = Path("submissions") / str(submission_id) / f"{uuid4().hex}{extension}"
@@ -152,7 +189,10 @@ async def list_submission_files(
 
 @router.post("/{submission_id}/evaluate-demo", response_model=OverallReportRead)
 async def evaluate_submission_demo(
-    submission_id: int, db: Session = Depends(get_db)
+    submission_id: int,
+    provider: str | None = Query(default=None),
+    model: str | None = Query(default=None),
+    db: Session = Depends(get_db),
 ) -> OverallReportRead:
     """为指定提交生成一份评图结果。"""
     query = (
@@ -172,11 +212,13 @@ async def evaluate_submission_demo(
         raise HTTPException(status_code=404, detail="未找到对应的方案提交。")
 
     settings = get_settings()
-    llm_client = get_llm_client(settings.llm_provider)
-    references = load_wiki_references(settings.wiki_dir, submission.design_stage)
-    if settings.llm_provider.lower() in {"openai", "dashscope"}:
-        if settings.llm_provider.lower() == "dashscope":
-            ensure_dashscope_model_file_urls(db, list(submission.drawing_files))
+    llm_provider = resolve_llm_provider(provider)
+    llm_model = resolve_llm_model(llm_provider, model)
+    llm_client = get_llm_client(llm_provider, llm_model)
+    references = load_submission_wiki_references(settings.wiki_dir, submission)
+    if llm_provider in REAL_LLM_PROVIDERS:
+        if llm_provider == "dashscope":
+            ensure_dashscope_model_file_urls(db, list(submission.drawing_files), llm_model)
         payload = build_function_agent_context(
             submission, list(submission.drawing_files), references
         )
@@ -190,7 +232,12 @@ async def evaluate_submission_demo(
     try:
         report_data = await asyncio.wait_for(
             asyncio.to_thread(llm_client.generate_evaluation, payload),
-            timeout=settings.llm_timeout_seconds + 15,
+            timeout=(
+                settings.llm_review_timeout_seconds + 15
+                if llm_provider in REAL_LLM_PROVIDERS
+                and is_scheme_stage(submission.design_stage)
+                else settings.llm_timeout_seconds + 15
+            ),
         )
     except Exception as exc:
         raise HTTPException(
@@ -198,7 +245,7 @@ async def evaluate_submission_demo(
             detail=build_model_error_message(exc),
         ) from exc
 
-    save_report_data(db, submission_id, report_data)
+    save_report_data(db, submission_id, report_data, references)
 
     overall_report = db.execute(
         select(OverallReport).where(OverallReport.submission_id == submission_id)
@@ -209,7 +256,7 @@ async def evaluate_submission_demo(
         ).scalars()
     )
 
-    return build_report_response(overall_report, agent_evaluations, submission)
+    return build_report_response(overall_report, agent_evaluations, submission, db)
 
 
 @router.get("/{submission_id}/report", response_model=OverallReportRead)
@@ -232,7 +279,7 @@ async def get_submission_report(
             select(AgentEvaluation).where(AgentEvaluation.submission_id == submission_id)
         ).scalars()
     )
-    return build_report_response(overall_report, agent_evaluations, submission)
+    return build_report_response(overall_report, agent_evaluations, submission, db)
 
 
 @router.get("/{submission_id}/references", response_model=list[KnowledgeReferenceRead])
@@ -245,34 +292,49 @@ async def list_submission_references(
         raise HTTPException(status_code=404, detail="未找到对应的方案提交。")
 
     settings = get_settings()
-    return load_wiki_references(settings.wiki_dir, submission.design_stage)
+    snapshots = load_report_reference_snapshots(db, submission_id)
+    if snapshots:
+        return snapshots
+    return load_submission_wiki_references(settings.wiki_dir, submission)
 
 
 @router.get("/{submission_id}/evaluate-stream")
-async def stream_submission_evaluation(submission_id: int) -> StreamingResponse:
+async def stream_submission_evaluation(
+    submission_id: int,
+    provider: str | None = Query(default=None),
+    model: str | None = Query(default=None),
+) -> StreamingResponse:
     """以 SSE 形式实时返回模型评图输出，并在结束时保存报告。"""
     return StreamingResponse(
-        stream_evaluation_events(submission_id),
+        stream_evaluation_events(submission_id, provider, model),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
-def stream_evaluation_events(submission_id: int):
+def stream_evaluation_events(
+    submission_id: int, provider: str | None = None, model: str | None = None
+):
     """生成评图流式事件，供前端对话区实时展示。"""
     session_factory = get_session_factory()
     db = session_factory()
+    payload = None
+    submission = None
+    llm_provider = None
+    llm_model = None
     try:
         yield sse_event("status", {"message": "正在准备评图上下文。"})
         submission = load_submission_for_evaluation(db, submission_id)
         settings = get_settings()
-        references = load_wiki_references(settings.wiki_dir, submission.design_stage)
+        references = load_submission_wiki_references(settings.wiki_dir, submission)
 
-        if settings.llm_provider.lower() == "dashscope":
+        llm_provider = resolve_llm_provider(provider)
+        llm_model = resolve_llm_model(llm_provider, model)
+        if llm_provider == "dashscope":
             yield sse_event("status", {"message": "正在上传模型可读取的图纸 URL。"})
-            ensure_dashscope_model_file_urls(db, list(submission.drawing_files))
-        elif settings.llm_provider.lower() not in {"openai", "dashscope"}:
-            report_data = get_llm_client(settings.llm_provider).generate_evaluation(
+            ensure_dashscope_model_file_urls(db, list(submission.drawing_files), llm_model)
+        elif llm_provider not in REAL_LLM_PROVIDERS:
+            report_data = get_llm_client(llm_provider, llm_model).generate_evaluation(
                 {
                     "project_name": submission.project.name,
                     "building_type": submission.project.building_type,
@@ -280,35 +342,103 @@ def stream_evaluation_events(submission_id: int):
                     "description": submission.description,
                 }
             )
-            save_report_data(db, submission_id, report_data)
-            yield sse_event("final", {"report": report_data})
+            save_report_data(db, submission_id, report_data, references)
+            overall_report = db.execute(
+                select(OverallReport).where(OverallReport.submission_id == submission_id)
+            ).scalar_one()
+            agent_evaluations = list(
+                db.execute(
+                    select(AgentEvaluation).where(AgentEvaluation.submission_id == submission_id)
+                ).scalars()
+            )
+            full_report = build_report_response(
+                overall_report, agent_evaluations, submission, db
+            )
+            yield sse_event("final", {"report": full_report.model_dump(mode="json")})
             return
 
-        payload = build_function_agent_context(
-            submission, list(submission.drawing_files), references
+        payload = build_function_agent_context(submission, list(submission.drawing_files), references)
+        if is_scheme_stage(submission.design_stage):
+            yield sse_event("status", {"message": f"正在调用 {llm_model} 顺序评审方案。"})
+            llm_client = get_llm_client(llm_provider, llm_model)
+            report_data = None
+            for item in iter_scheme_review_events(llm_client, payload):
+                if item["event"] == "report":
+                    report_data = item["report"]
+                    continue
+                yield sse_event("agent", item)
+            if report_data is None:
+                raise RuntimeError("方案阶段多 Agent 未返回综合报告。")
+        else:
+            yield sse_event("status", {"message": f"正在调用 {llm_model} 读取图纸。"})
+            raw_output_parts = []
+            for item in stream_function_agent_events(payload, llm_provider, llm_model):
+                if item["event"] == "raw":
+                    raw_output_parts.append(item["text"])
+                else:
+                    yield sse_event(item["event"], {"text": item["text"]})
+            raw_output = json.loads("".join(raw_output_parts) or "{}")
+            report = validate_function_agent_output(raw_output)
+            report_data = function_agent_report_to_overall(report, payload)
+        save_report_data(db, submission_id, report_data, references)
+        overall_report = db.execute(
+            select(OverallReport).where(OverallReport.submission_id == submission_id)
+        ).scalar_one()
+        agent_evaluations = list(
+            db.execute(
+                select(AgentEvaluation).where(AgentEvaluation.submission_id == submission_id)
+            ).scalars()
         )
-        yield sse_event("status", {"message": "正在调用 Qwen3.6-Plus 读取图纸。"})
-        raw_output_parts = []
-        for item in stream_function_agent_events(payload):
-            if item["event"] == "raw":
-                raw_output_parts.append(item["text"])
-            else:
-                yield sse_event(item["event"], {"text": item["text"]})
-        raw_output = json.loads("".join(raw_output_parts) or "{}")
-        report = validate_function_agent_output(raw_output)
-        report_data = function_agent_report_to_overall(report)
-        save_report_data(db, submission_id, report_data)
-        yield sse_event("final", {"report": report_data})
+        full_report = build_report_response(overall_report, agent_evaluations, submission, db)
+        yield sse_event("final", {"report": full_report.model_dump(mode="json")})
     except Exception as exc:
+        can_retry_stream = (
+            payload is not None
+            and submission is not None
+            and llm_provider in REAL_LLM_PROVIDERS
+            and not is_scheme_stage(submission.design_stage)
+        )
+        if can_retry_stream:
+            yield sse_event(
+                "status",
+                {"message": "流式输出中断，正在改用非流式结构化评图兜底。"},
+            )
+            try:
+                report_data = get_llm_client(llm_provider, llm_model).generate_evaluation(payload)
+                save_report_data(db, submission_id, report_data, payload.get("references", []))
+                overall_report = db.execute(
+                    select(OverallReport).where(OverallReport.submission_id == submission_id)
+                ).scalar_one()
+                agent_evaluations = list(
+                    db.execute(
+                        select(AgentEvaluation).where(AgentEvaluation.submission_id == submission_id)
+                    ).scalars()
+                )
+                full_report = build_report_response(
+                    overall_report, agent_evaluations, submission, db
+                )
+                yield sse_event("final", {"report": full_report.model_dump(mode="json")})
+                return
+            except Exception as fallback_exc:
+                message = (
+                    f"{build_model_error_message(exc)}；兜底调用也失败："
+                    f"{build_model_error_message(fallback_exc)}"
+                )
+                yield sse_event("error", {"message": message})
+                return
         yield sse_event("error", {"message": build_model_error_message(exc)})
     finally:
         db.close()
 
 
-def stream_function_agent_events(payload: dict):
+def stream_function_agent_events(
+    payload: dict, provider: str | None = None, model: str | None = None
+):
     """流式调用功能 Agent，边生成边返回文本，结束后解析 JSON。"""
     settings = get_settings()
-    llm_client = get_llm_client(settings.llm_provider)
+    llm_provider = resolve_llm_provider(provider)
+    llm_model = resolve_llm_model(llm_provider, model)
+    llm_client = get_llm_client(llm_provider, llm_model)
     agent = FunctionAgent(
         llm_client.client,
         llm_client.model,
@@ -316,24 +446,30 @@ def stream_function_agent_events(payload: dict):
         llm_client.max_tokens,
         llm_client.image_detail,
         llm_client.extra_body,
+        llm_client.reasoning_effort,
     )
     content: list[dict] = [
         {"type": "text", "text": build_function_agent_user_prompt(payload)}
     ]
     content.extend(build_image_inputs(payload["drawings"], detail=agent.image_detail))
-    stream = llm_client.client.chat.completions.create(
-        model=llm_client.model,
-        messages=[
+    create_kwargs = {
+        "model": llm_client.model,
+        "messages": [
             {"role": "system", "content": FUNCTION_AGENT_SYSTEM_PROMPT},
             {"role": "user", "content": content},
         ],
-        response_format={"type": "json_object"},
-        temperature=0.2,
-        max_tokens=llm_client.max_tokens,
-        stream=True,
-        stream_options={"include_usage": True},
-        extra_body=llm_client.extra_body,
-    )
+        "response_format": {"type": "json_object"},
+        "temperature": 0.2,
+        "max_tokens": llm_client.max_tokens,
+        "stream": True,
+        "extra_body": llm_client.extra_body,
+    }
+    if llm_provider != "gemini":
+        create_kwargs["stream_options"] = {"include_usage": True}
+    if llm_client.reasoning_effort:
+        create_kwargs["reasoning_effort"] = llm_client.reasoning_effort
+
+    stream = llm_client.client.chat.completions.create(**create_kwargs)
 
     for chunk in stream:
         if not chunk.choices:
@@ -371,12 +507,12 @@ def load_submission_for_evaluation(db: Session, submission_id: int) -> Submissio
 
 
 def ensure_dashscope_model_file_urls(
-    db: Session, drawing_files: list[DrawingFile]
+    db: Session, drawing_files: list[DrawingFile], model: str | None = None
 ) -> None:
     """确保每张图纸都有百炼可访问的临时 oss:// URL。"""
     settings = get_settings()
     client = DashScopeFileClient(
-        settings.dashscope_api_key, settings.llm_model, settings.llm_timeout_seconds
+        settings.dashscope_api_key, model or settings.llm_model, settings.llm_timeout_seconds
     )
     changed = False
     for item in drawing_files:
@@ -384,7 +520,9 @@ def ensure_dashscope_model_file_urls(
             continue
         file_path = local_upload_path(item.file_url)
         if file_path is None:
-            continue
+            raise DashScopeUploadError(
+                f"找不到本地图纸文件，无法上传到百炼：{item.original_name}"
+            )
         result = client.upload_file(file_path, item.mime_type)
         item.model_file_url = result.url
         item.model_file_expires_at = result.expires_at
@@ -417,8 +555,14 @@ def local_upload_path(file_url: str) -> Path | None:
     return file_path
 
 
-def save_report_data(db: Session, submission_id: int, report_data: dict) -> None:
+def save_report_data(
+    db: Session,
+    submission_id: int,
+    report_data: dict,
+    references: list[dict] | None = None,
+) -> None:
     """保存模型生成的综合报告和各 Agent 分项。"""
+    db.execute(delete(ReportReference).where(ReportReference.submission_id == submission_id))
     db.execute(
         delete(AgentEvaluation).where(AgentEvaluation.submission_id == submission_id)
     )
@@ -438,18 +582,19 @@ def save_report_data(db: Session, submission_id: int, report_data: dict) -> None
             )
         )
 
-    db.add(
-        OverallReport(
-            submission_id=submission_id,
-            overall_score=report_data["overall_score"],
-            grade=report_data["grade"],
-            summary=report_data["summary"],
-            must_fix=report_data["must_fix"],
-            should_improve=report_data["should_improve"],
-            optional_improvements=report_data["optional_improvements"],
-            strengths=report_data["strengths"],
-        )
+    overall_report = OverallReport(
+        submission_id=submission_id,
+        overall_score=report_data["overall_score"],
+        grade=report_data["grade"],
+        summary=report_data["summary"],
+        must_fix=report_data["must_fix"],
+        should_improve=report_data["should_improve"],
+        optional_improvements=report_data["optional_improvements"],
+        strengths=report_data["strengths"],
     )
+    db.add(overall_report)
+    db.flush()
+    save_reference_snapshots(db, submission_id, overall_report.id, references or [])
     db.commit()
 
 
@@ -457,12 +602,16 @@ def build_report_response(
     overall_report: OverallReport,
     agent_evaluations: list[AgentEvaluation],
     submission: Submission | None = None,
+    db: Session | None = None,
 ) -> OverallReportRead:
     """把数据库中的报告和分项评价整理成接口返回结构。"""
     references = []
     if submission is not None:
-        settings = get_settings()
-        references = load_wiki_references(settings.wiki_dir, submission.design_stage)
+        if db is not None:
+            references = load_report_reference_snapshots(db, submission.id)
+        if not references:
+            settings = get_settings()
+            references = load_submission_wiki_references(settings.wiki_dir, submission)
 
     return OverallReportRead(
         id=overall_report.id,
@@ -490,15 +639,90 @@ def build_report_response(
     )
 
 
+def save_reference_snapshots(
+    db: Session,
+    submission_id: int,
+    report_id: int,
+    references: list[dict],
+) -> None:
+    """保存本次评图实际使用的知识库依据快照。"""
+    for index, item in enumerate(references, start=1):
+        db.add(
+            ReportReference(
+                submission_id=submission_id,
+                report_id=report_id,
+                position=index,
+                reference_id=str(item.get("reference_id") or f"K{index}"),
+                title=str(item.get("title") or ""),
+                source_type=str(item.get("source_type") or ""),
+                excerpt=str(item.get("excerpt") or ""),
+                dimension=str(item.get("dimension") or ""),
+                path=str(item.get("path") or ""),
+                content=str(item.get("content") or ""),
+                display_content=str(item.get("display_content") or ""),
+                image_urls=item.get("image_urls") or [],
+            )
+        )
+
+
+def load_report_reference_snapshots(db: Session, submission_id: int) -> list[dict]:
+    """读取一次评图保存下来的知识库依据快照。"""
+    rows = db.execute(
+        select(ReportReference)
+        .where(ReportReference.submission_id == submission_id)
+        .order_by(ReportReference.position.asc(), ReportReference.id.asc())
+    ).scalars()
+    return [
+        {
+            "reference_id": item.reference_id,
+            "title": item.title,
+            "source_type": item.source_type,
+            "excerpt": item.excerpt,
+            "dimension": item.dimension,
+            "path": item.path,
+            "content": item.content,
+            "display_content": item.display_content,
+            "image_urls": item.image_urls,
+        }
+        for item in rows
+    ]
+
+
+def load_submission_wiki_references(wiki_dir: str, submission: Submission) -> list[dict]:
+    """根据提交上下文从完整 Wiki 中检索相关知识依据。"""
+    project = submission.project
+    return load_wiki_references(
+        wiki_dir,
+        submission.design_stage,
+        query_context={
+            "project_name": project.name,
+            "building_type": project.building_type,
+            "design_stage": submission.design_stage,
+            "description": submission.description,
+            "drawing_types": [item.drawing_type for item in submission.drawing_files],
+        },
+    )
+
+
 def build_model_error_message(exc: Exception) -> str:
     """把模型调用异常转换成前端可读的中文提示。"""
     message = str(exc)
+    if isinstance(exc, DashScopeUploadError) or "百炼临时存储失败" in message:
+        return f"图纸上传到百炼临时 URL 失败：{message}"
+    if isinstance(exc, json.JSONDecodeError) or "Expecting value" in message:
+        return "千问已返回内容，但结构化 JSON 不完整或格式错误，系统未能解析成报告。"
+    if "模型 JSON 输出达到长度上限" in message:
+        return "模型评审内容过长，报告在返回时被截断。"
     if isinstance(exc, asyncio.TimeoutError) or "timed out" in message.lower():
-        return "真实模型评图调用超时：已停止等待模型返回。请稍后重试，或把图纸压缩到更小尺寸后再评图。"
+        return "真实模型评图调用超时：已停止等待模型返回。"
+    if "ReadTimeout" in message or "APITimeoutError" in message:
+        return "千问流式输出超时：模型读取图纸或生成报告时间过长。"
+    if "APIStatusError" in message or "BadRequest" in message:
+        return f"千问接口拒绝本次请求：{message[:240]}"
     if "insufficient_quota" in message or "exceeded your current quota" in message:
         return "真实模型评图调用失败：OpenAI API 额度不足或计费未启用，请检查 Platform 余额和 Billing 设置。"
     if "Connection error" in message or "APIConnectionError" in message:
-        return "真实模型评图调用失败：后端无法连接 OpenAI API，请检查网络或代理设置。"
+        return "真实模型评图调用失败：后端无法连接模型 API，请检查网络或代理设置。"
     if "invalid_api_key" in message or "Incorrect API key" in message:
-        return "真实模型评图调用失败：OpenAI API Key 无效，请重新配置。"
-    return "真实模型评图调用失败：模型服务暂时不可用，请稍后重试。"
+        return "真实模型评图调用失败：API Key 无效，请重新配置。"
+    return f"真实模型评图调用失败：{message[:240] or '模型服务暂时不可用。'}"

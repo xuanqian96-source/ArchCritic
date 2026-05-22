@@ -90,10 +90,13 @@ class MockLLMClient(BaseLLMClient):
         return "D"
 
 
-def get_llm_client(provider: str | None = None) -> BaseLLMClient:
+def get_llm_client(
+    provider: str | None = None, model: str | None = None
+) -> BaseLLMClient:
     """根据配置返回对应的模型客户端。"""
     settings = get_settings()
     resolved_provider = (provider or settings.llm_provider).lower()
+    resolved_model = model or settings.llm_model
 
     if resolved_provider == "mock":
         return MockLLMClient()
@@ -105,8 +108,10 @@ def get_llm_client(provider: str | None = None) -> BaseLLMClient:
 
         return OpenAILLMClient(
             settings.openai_api_key,
-            settings.llm_model,
+            resolved_model,
             timeout_seconds=settings.llm_timeout_seconds,
+            agent_timeout_seconds=settings.llm_agent_timeout_seconds,
+            review_timeout_seconds=settings.llm_review_timeout_seconds,
             max_tokens=settings.llm_max_tokens,
             image_detail=settings.llm_image_detail,
         )
@@ -118,14 +123,34 @@ def get_llm_client(provider: str | None = None) -> BaseLLMClient:
 
         return OpenAILLMClient(
             settings.dashscope_api_key,
-            settings.llm_model,
+            resolved_model,
             settings.dashscope_base_url,
             "json_object",
             timeout_seconds=settings.llm_timeout_seconds,
+            agent_timeout_seconds=settings.llm_agent_timeout_seconds,
+            review_timeout_seconds=settings.llm_review_timeout_seconds,
             max_tokens=settings.llm_max_tokens,
             image_detail=settings.llm_image_detail,
             extra_body={"enable_thinking": False},
             default_headers={"X-DashScope-OssResourceResolve": "enable"},
+        )
+
+    if resolved_provider == "gemini":
+        if not settings.gemini_api_key:
+            raise ValueError("当前未配置 Gemini API Key，无法启用 Gemini 模型。")
+        from app.llm.openai_client import OpenAILLMClient
+
+        return OpenAILLMClient(
+            settings.gemini_api_key,
+            resolved_model,
+            settings.gemini_base_url,
+            "json_object",
+            timeout_seconds=settings.llm_timeout_seconds,
+            agent_timeout_seconds=settings.llm_agent_timeout_seconds,
+            review_timeout_seconds=settings.llm_review_timeout_seconds,
+            max_tokens=settings.llm_max_tokens,
+            image_detail=settings.llm_image_detail,
+            reasoning_effort="none",
         )
 
     raise ValueError(f"暂不支持的模型提供方：{resolved_provider}")

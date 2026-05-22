@@ -1,6 +1,7 @@
 """封装 OpenAI 模型调用，供真实评图 Agent 使用。"""
 
 from app.agents.function_agent import FunctionAgent, function_agent_report_to_overall
+from app.agents.scheme_review import generate_scheme_review, is_scheme_stage
 from app.llm.base import BaseLLMClient
 
 
@@ -14,10 +15,13 @@ class OpenAILLMClient(BaseLLMClient):
         base_url: str | None = None,
         structured_output_mode: str = "json_schema",
         timeout_seconds: int = 90,
+        agent_timeout_seconds: int = 50,
+        review_timeout_seconds: int = 285,
         max_tokens: int = 1200,
         image_detail: str = "low",
         extra_body: dict | None = None,
         default_headers: dict | None = None,
+        reasoning_effort: str | None = None,
     ) -> None:
         """初始化 OpenAI 或 OpenAI 兼容客户端。"""
         import httpx
@@ -25,8 +29,11 @@ class OpenAILLMClient(BaseLLMClient):
 
         self.model = model
         self.max_tokens = max_tokens
+        self.agent_timeout_seconds = agent_timeout_seconds
+        self.review_timeout_seconds = review_timeout_seconds
         self.image_detail = image_detail
         self.extra_body = extra_body
+        self.reasoning_effort = reasoning_effort
         client_options = {
             "api_key": api_key,
             "http_client": httpx.Client(timeout=timeout_seconds, trust_env=False),
@@ -40,7 +47,10 @@ class OpenAILLMClient(BaseLLMClient):
         self.structured_output_mode = structured_output_mode
 
     def generate_evaluation(self, payload: dict) -> dict:
-        """调用功能与流线 Agent，并转换成前端报告结构。"""
+        """按阶段调用真实 Agent，并转换成前端报告结构。"""
+        if is_scheme_stage(payload.get("design_stage", "")):
+            return generate_scheme_review(self, payload)
+
         agent = FunctionAgent(
             self.client,
             self.model,
@@ -48,6 +58,7 @@ class OpenAILLMClient(BaseLLMClient):
             self.max_tokens,
             self.image_detail,
             self.extra_body,
+            self.reasoning_effort,
         )
         report = agent.run(payload)
-        return function_agent_report_to_overall(report)
+        return function_agent_report_to_overall(report, payload)

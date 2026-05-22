@@ -173,6 +173,15 @@ async def test_report_references_use_wiki_files(tmp_path, monkeypatch):
         report_response = await client.post(
             f"/api/submissions/{submission_id}/evaluate-demo"
         )
+        wiki_file.write_text(
+            "# 已修改的新知识卡片\n"
+            "\n"
+            "- **评图应用**：这条内容不应影响已经生成的报告快照。\n",
+            encoding="utf-8",
+        )
+        saved_report_response = await client.get(
+            f"/api/submissions/{submission_id}/report"
+        )
         references_response = await client.get(
             f"/api/submissions/{submission_id}/references"
         )
@@ -183,5 +192,30 @@ async def test_report_references_use_wiki_files(tmp_path, monkeypatch):
 
     assert report_response.status_code == 200
     assert report_response.json()["references"][0]["title"] == "功能与流线 — 相关设计规范"
+    assert saved_report_response.status_code == 200
+    assert (
+        saved_report_response.json()["references"][0]["title"]
+        == "功能与流线 — 相关设计规范"
+    )
     assert references_response.status_code == 200
     assert references_response.json()[0]["source_type"] == "规范"
+
+
+def test_wiki_loader_accepts_obsidian_dimension_folder(tmp_path):
+    """确认后端可以读取新版 Obsidian 知识库的评价维度目录。"""
+    wiki_file = tmp_path / "05评价维度" / "方案阶段" / "功能与流线.md"
+    wiki_file.parent.mkdir(parents=True)
+    wiki_file.write_text(
+        "# 功能与流线\n"
+        "\n"
+        "- **可引用观点**：入口、门厅和展厅应形成清晰连续的进入过程。\n",
+        encoding="utf-8",
+    )
+
+    from app.wiki import load_wiki_references
+
+    references = load_wiki_references(str(tmp_path), "scheme")
+
+    assert len(references) == 1
+    assert references[0]["title"] == "功能与流线"
+    assert references[0]["excerpt"] == "入口、门厅和展厅应形成清晰连续的进入过程。"

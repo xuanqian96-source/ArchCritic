@@ -131,3 +131,26 @@ class OverallReport(Base):
     )
 
     submission: Mapped[Submission] = relationship(back_populates="overall_report")
+
+
+class ReportReference(Base):
+    """保存一次评图实际使用的知识库依据快照。"""
+
+    __tablename__ = "report_references"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    submission_id: Mapped[int] = mapped_column(ForeignKey("submissions.id"))
+    report_id: Mapped[int] = mapped_column(ForeignKey("overall_reports.id"))
+    position: Mapped[int] = mapped_column(default=0)
+    reference_id: Mapped[str] = mapped_column(String(20), default="")
+    title: Mapped[str] = mapped_column(String(300))
+    source_type: Mapped[str] = mapped_column(String(100))
+    excerpt: Mapped[str] = mapped_column(Text)
+    dimension: Mapped[str] = mapped_column(String(100))
+    path: Mapped[str] = mapped_column(String(500))
+    content: Mapped[str] = mapped_column(Text, default="")
+    display_content: Mapped[str] = mapped_column(Text, default="")
+    image_urls: Mapped[list[dict]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
