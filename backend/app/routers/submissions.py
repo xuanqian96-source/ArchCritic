@@ -8,7 +8,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -30,6 +30,8 @@ from app.llm.client import get_llm_client
 from app.llm.dashscope_files import DashScopeFileClient, DashScopeUploadError
 from app.models import (
     AgentEvaluation,
+    Attachment,
+    ChatMessage,
     DrawingFile,
     OverallReport,
     Project,
@@ -37,11 +39,15 @@ from app.models import (
     Submission,
 )
 from app.schemas import (
+    AttachmentRead,
+    ChatMessageCreate,
+    ChatMessageRead,
     DrawingFileRead,
     KnowledgeReferenceRead,
     OverallReportRead,
     SubmissionCreate,
     SubmissionRead,
+    SubmissionUpdate,
 )
 from app.wiki import load_wiki_references
 
@@ -56,12 +62,30 @@ ALLOWED_IMAGE_TYPES = {
     "image/gif": ".gif",
 }
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
+MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+ALLOWED_ATTACHMENT_TYPES = {
+    "application/pdf": ".pdf",
+    "application/msword": ".doc",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "text/plain": ".txt",
+}
+CANCELLED_SUBMISSIONS: set[int] = set()
 MODEL_PRESETS = {
     "mock": "demo",
     "openai": "gpt-4o-mini",
     "dashscope": "qwen3.6-plus",
     "gemini": "gemini-2.5-flash",
 }
+
+
+class EvaluationCancelled(Exception):
+    """表示用户主动暂停本次评图。"""
+
+
+def ensure_evaluation_active(submission_id: int) -> None:
+    """在模型调用之间检查用户是否已请求暂停。"""
+    if submission_id in CANCELLED_SUBMISSIONS:
+        raise EvaluationCancelled()
 
 
 def resolve_llm_provider(provider: str | None) -> str:
@@ -101,8 +125,27 @@ async def create_submission(
         design_stage=payload.design_stage,
         description=payload.description,
         image_urls=payload.image_urls,
+        status=payload.status,
+        enabled_agents=payload.enabled_agents,
+        selected_model_provider=payload.selected_model_provider,
+        selected_model_name=payload.selected_model_name,
     )
     db.add(submission)
+    db.commit()
+    db.refresh(submission)
+    return submission
+
+
+@router.patch("/{submission_id}", response_model=SubmissionRead)
+async def update_submission(
+    submission_id: int, payload: SubmissionUpdate, db: Session = Depends(get_db)
+) -> Submission:
+    """修改草稿提交、阶段、模型和 Agent 选择。"""
+    submission = db.get(Submission, submission_id)
+    if submission is None:
+        raise HTTPException(status_code=404, detail="未找到对应的方案提交。")
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(submission, field, value)
     db.commit()
     db.refresh(submission)
     return submission
@@ -184,6 +227,134 @@ async def list_submission_files(
         select(DrawingFile)
         .where(DrawingFile.submission_id == submission_id)
         .order_by(DrawingFile.id.asc())
+    )
+    return list(result.scalars().all())
+
+
+@router.post(
+    "/{submission_id}/attachments",
+    response_model=AttachmentRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_submission_attachment(
+    submission_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+) -> Attachment:
+    """上传任务书等补充资料。"""
+    submission = db.get(Submission, submission_id)
+    if submission is None:
+        raise HTTPException(status_code=404, detail="未找到对应的方案提交。")
+    mime_type = file.content_type or ""
+    extension = ALLOWED_ATTACHMENT_TYPES.get(mime_type)
+    if extension is None:
+        raise HTTPException(status_code=400, detail="任务书仅支持 PDF、Word 或文本文件。")
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="上传文件不能为空。")
+    if len(content) > MAX_ATTACHMENT_BYTES:
+        raise HTTPException(status_code=400, detail="单个任务书不能超过 20MB。")
+    relative_path = Path("attachments") / str(submission_id) / f"{uuid4().hex}{extension}"
+    target_path = Path(get_settings().upload_dir) / relative_path
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_bytes(content)
+    attachment = Attachment(
+        submission_id=submission_id,
+        original_name=file.filename or "未命名任务书",
+        file_url=f"/uploads/{relative_path.as_posix()}",
+        mime_type=mime_type,
+    )
+    db.add(attachment)
+    db.commit()
+    db.refresh(attachment)
+    return attachment
+
+
+@router.get("/{submission_id}/attachments", response_model=list[AttachmentRead])
+async def list_submission_attachments(
+    submission_id: int, db: Session = Depends(get_db)
+) -> list[Attachment]:
+    """返回某次提交下的补充资料。"""
+    if db.get(Submission, submission_id) is None:
+        raise HTTPException(status_code=404, detail="未找到对应的方案提交。")
+    result = db.execute(
+        select(Attachment)
+        .where(Attachment.submission_id == submission_id)
+        .order_by(Attachment.id.asc())
+    )
+    return list(result.scalars().all())
+
+
+@router.post("/{submission_id}/cancel-evaluation", response_model=SubmissionRead)
+async def cancel_submission_evaluation(
+    submission_id: int, db: Session = Depends(get_db)
+) -> Submission:
+    """标记当前评图任务暂停，并在下一个可中断节点停止。"""
+    submission = db.get(Submission, submission_id)
+    if submission is None:
+        raise HTTPException(status_code=404, detail="未找到对应的方案提交。")
+    CANCELLED_SUBMISSIONS.add(submission_id)
+    submission.status = "cancelled"
+    db.commit()
+    db.refresh(submission)
+    return submission
+
+
+@router.get("/{submission_id}/report/export", response_class=PlainTextResponse)
+async def export_submission_report(
+    submission_id: int, db: Session = Depends(get_db)
+) -> PlainTextResponse:
+    """导出当前报告为 Markdown 文件。"""
+    report = await get_submission_report(submission_id, db)
+    sections = [
+        f"# ArchCritic 评图报告\n\n综合评分：{report.overall_score}\n\n{report.summary}",
+        "## 必须修改\n" + "\n".join(f"- {item}" for item in report.must_fix),
+        "## 重点优化\n" + "\n".join(f"- {item}" for item in report.should_improve),
+        "## 建议关注\n" + "\n".join(f"- {item}" for item in report.optional_improvements),
+    ]
+    return PlainTextResponse(
+        "\n\n".join(sections),
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="archcritic-report-{submission_id}.md"'},
+    )
+
+
+@router.post("/{submission_id}/chat", response_model=ChatMessageRead)
+async def create_chat_message(
+    submission_id: int, payload: ChatMessageCreate, db: Session = Depends(get_db)
+) -> ChatMessage:
+    """保存报告追问，并按当前报告给出可核对的回答。"""
+    submission = db.get(Submission, submission_id)
+    if submission is None:
+        raise HTTPException(status_code=404, detail="未找到对应的方案提交。")
+    report = db.execute(
+        select(OverallReport).where(OverallReport.submission_id == submission_id)
+    ).scalar_one_or_none()
+    if report is None:
+        answer = "报告仍在生成中，请稍后再继续追问。"
+    elif "必须" in payload.content or "修改" in payload.content:
+        answer = "本轮必须修改项：" + "；".join(report.must_fix[:3])
+    else:
+        answer = f"结合本次评分，{report.summary} 建议先复核：" + "；".join(report.should_improve[:2])
+    db.add(ChatMessage(submission_id=submission_id, role="user", content=payload.content))
+    response = ChatMessage(submission_id=submission_id, role="assistant", content=answer)
+    db.add(response)
+    db.commit()
+    db.refresh(response)
+    return response
+
+
+@router.get("/{submission_id}/chat/messages", response_model=list[ChatMessageRead])
+async def list_chat_messages(
+    submission_id: int, db: Session = Depends(get_db)
+) -> list[ChatMessage]:
+    """返回当前提交的全部报告追问记录。"""
+    if db.get(Submission, submission_id) is None:
+        raise HTTPException(status_code=404, detail="未找到对应的方案提交。")
+    result = db.execute(
+        select(ChatMessage)
+        .where(ChatMessage.submission_id == submission_id)
+        .order_by(ChatMessage.id.asc())
     )
     return list(result.scalars().all())
 
@@ -324,6 +495,7 @@ def stream_evaluation_events(
     llm_provider = None
     llm_model = None
     try:
+        CANCELLED_SUBMISSIONS.discard(submission_id)
         yield sse_event("status", {"message": "正在准备评图上下文。"})
         submission = load_submission_for_evaluation(db, submission_id)
         settings = get_settings()
@@ -331,6 +503,11 @@ def stream_evaluation_events(
 
         llm_provider = resolve_llm_provider(provider)
         llm_model = resolve_llm_model(llm_provider, model)
+        submission.status = "evaluating"
+        submission.selected_model_provider = llm_provider
+        submission.selected_model_name = llm_model
+        db.commit()
+        ensure_evaluation_active(submission_id)
         if llm_provider == "dashscope":
             yield sse_event("status", {"message": "正在上传模型可读取的图纸 URL。"})
             ensure_dashscope_model_file_urls(db, list(submission.drawing_files), llm_model)
@@ -355,6 +532,8 @@ def stream_evaluation_events(
             full_report = build_report_response(
                 overall_report, agent_evaluations, submission, db
             )
+            submission.status = "completed"
+            db.commit()
             yield sse_event("final", {"report": full_report.model_dump(mode="json")})
             return
 
@@ -364,6 +543,7 @@ def stream_evaluation_events(
             llm_client = get_llm_client(llm_provider, llm_model)
             report_data = None
             for item in iter_scheme_review_events(llm_client, payload):
+                ensure_evaluation_active(submission_id)
                 if item["event"] == "report":
                     report_data = item["report"]
                     continue
@@ -374,6 +554,7 @@ def stream_evaluation_events(
             yield sse_event("status", {"message": f"正在调用 {llm_model} 读取图纸。"})
             raw_output_parts = []
             for item in stream_function_agent_events(payload, llm_provider, llm_model):
+                ensure_evaluation_active(submission_id)
                 if item["event"] == "raw":
                     raw_output_parts.append(item["text"])
                 else:
@@ -391,8 +572,18 @@ def stream_evaluation_events(
             ).scalars()
         )
         full_report = build_report_response(overall_report, agent_evaluations, submission, db)
+        submission.status = "completed"
+        db.commit()
         yield sse_event("final", {"report": full_report.model_dump(mode="json")})
+    except EvaluationCancelled:
+        if submission is not None:
+            submission.status = "cancelled"
+            db.commit()
+        yield sse_event("status", {"message": "评图已暂停。"})
     except Exception as exc:
+        if submission is not None:
+            submission.status = "failed"
+            db.commit()
         can_retry_stream = (
             payload is not None
             and submission is not None
@@ -418,6 +609,8 @@ def stream_evaluation_events(
                 full_report = build_report_response(
                     overall_report, agent_evaluations, submission, db
                 )
+                submission.status = "completed"
+                db.commit()
                 yield sse_event("final", {"report": full_report.model_dump(mode="json")})
                 return
             except Exception as fallback_exc:

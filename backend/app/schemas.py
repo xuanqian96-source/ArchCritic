@@ -12,6 +12,19 @@ class ProjectCreate(BaseModel):
     building_type: str = Field(..., min_length=1, max_length=100)
     owner_name: str = Field(..., min_length=1, max_length=100)
     grade: str = Field(default="", max_length=100)
+    site_location: str = Field(default="", max_length=200)
+    course_name: str = Field(default="", max_length=200)
+
+
+class ProjectUpdate(BaseModel):
+    """修改项目时使用的数据结构。"""
+
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    building_type: str | None = Field(default=None, min_length=1, max_length=100)
+    owner_name: str | None = Field(default=None, min_length=1, max_length=100)
+    grade: str | None = Field(default=None, max_length=100)
+    site_location: str | None = Field(default=None, max_length=200)
+    course_name: str | None = Field(default=None, max_length=200)
 
 
 class ProjectRead(BaseModel):
@@ -22,6 +35,8 @@ class ProjectRead(BaseModel):
     building_type: str
     owner_name: str
     grade: str = ""
+    site_location: str = ""
+    course_name: str = ""
     created_at: datetime | None = None
 
     model_config = {"from_attributes": True}
@@ -35,6 +50,23 @@ class SubmissionCreate(BaseModel):
     design_stage: str = Field(..., min_length=1, max_length=50)
     description: str = Field(..., min_length=1)
     image_urls: list[str] = Field(default_factory=list)
+    status: str = Field(default="draft", max_length=30)
+    enabled_agents: list[str] = Field(default_factory=list)
+    selected_model_provider: str = Field(default="mock", max_length=50)
+    selected_model_name: str = Field(default="demo", max_length=100)
+
+
+class SubmissionUpdate(BaseModel):
+    """修改草稿提交时使用的数据结构。"""
+
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    design_stage: str | None = Field(default=None, min_length=1, max_length=50)
+    description: str | None = Field(default=None, min_length=1)
+    image_urls: list[str] | None = None
+    status: str | None = Field(default=None, max_length=30)
+    enabled_agents: list[str] | None = None
+    selected_model_provider: str | None = Field(default=None, max_length=50)
+    selected_model_name: str | None = Field(default=None, max_length=100)
 
 
 class SubmissionRead(BaseModel):
@@ -46,7 +78,12 @@ class SubmissionRead(BaseModel):
     design_stage: str
     description: str
     image_urls: list[str]
+    status: str = "draft"
+    enabled_agents: list[str] = Field(default_factory=list)
+    selected_model_provider: str = "mock"
+    selected_model_name: str = "demo"
     created_at: datetime | None = None
+    updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -60,8 +97,54 @@ class DrawingFileRead(BaseModel):
     original_name: str
     file_url: str
     mime_type: str
+    description: str = ""
+    sort_order: int = 0
     model_file_url: str = ""
     model_file_expires_at: datetime | None = None
+    created_at: datetime | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class DrawingFileUpdate(BaseModel):
+    """修改图纸类型、说明和排序时使用的数据结构。"""
+
+    drawing_type: str | None = Field(default=None, max_length=50)
+    description: str | None = Field(default=None, max_length=200)
+    sort_order: int | None = None
+
+
+class BatchDeleteFiles(BaseModel):
+    """批量删除图纸时使用的数据结构。"""
+
+    file_ids: list[int] = Field(default_factory=list)
+
+
+class AttachmentRead(BaseModel):
+    """返回任务书等补充资料时使用的数据结构。"""
+
+    id: int
+    submission_id: int
+    original_name: str
+    file_url: str
+    mime_type: str
+    created_at: datetime | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class ChatMessageCreate(BaseModel):
+    """提交报告追问时使用的数据结构。"""
+
+    content: str = Field(..., min_length=1, max_length=1000)
+
+
+class ChatMessageRead(BaseModel):
+    """返回报告追问消息时使用的数据结构。"""
+
+    id: int
+    role: str
+    content: str
     created_at: datetime | None = None
 
     model_config = {"from_attributes": True}
@@ -129,6 +212,8 @@ class SubmissionHistoryRead(BaseModel):
     created_at: datetime | None = None
     overall_score: float | None = None
     grade: str | None = None
+    summary: str = ""
+    dimension_scores: dict[str, float] = Field(default_factory=dict)
 
 
 class EvaluationRequest(BaseModel):

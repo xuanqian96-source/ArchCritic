@@ -57,8 +57,41 @@ def ensure_sqlite_columns(engine: Engine) -> None:
             connection.execute(
                 text("ALTER TABLE projects ADD COLUMN grade VARCHAR(100) DEFAULT ''")
             )
+        if "site_location" not in project_columns:
+            connection.execute(
+                text("ALTER TABLE projects ADD COLUMN site_location VARCHAR(200) DEFAULT ''")
+            )
+        if "course_name" not in project_columns:
+            connection.execute(
+                text("ALTER TABLE projects ADD COLUMN course_name VARCHAR(200) DEFAULT ''")
+            )
 
         table_names = set(inspector.get_table_names())
+        if "submissions" in table_names:
+            submission_columns = {
+                column["name"] for column in inspector.get_columns("submissions")
+            }
+            if "status" not in submission_columns:
+                connection.execute(
+                    text("ALTER TABLE submissions ADD COLUMN status VARCHAR(30) DEFAULT 'draft'")
+                )
+            if "enabled_agents" not in submission_columns:
+                connection.execute(
+                    text("ALTER TABLE submissions ADD COLUMN enabled_agents JSON DEFAULT '[]'")
+                )
+            if "selected_model_provider" not in submission_columns:
+                connection.execute(
+                    text("ALTER TABLE submissions ADD COLUMN selected_model_provider VARCHAR(50) DEFAULT 'mock'")
+                )
+            if "selected_model_name" not in submission_columns:
+                connection.execute(
+                    text("ALTER TABLE submissions ADD COLUMN selected_model_name VARCHAR(100) DEFAULT 'demo'")
+                )
+            if "updated_at" not in submission_columns:
+                connection.execute(
+                    text("ALTER TABLE submissions ADD COLUMN updated_at DATETIME")
+                )
+
         if "drawing_files" in table_names:
             drawing_columns = {
                 column["name"] for column in inspector.get_columns("drawing_files")
@@ -70,6 +103,14 @@ def ensure_sqlite_columns(engine: Engine) -> None:
             if "model_file_expires_at" not in drawing_columns:
                 connection.execute(
                     text("ALTER TABLE drawing_files ADD COLUMN model_file_expires_at DATETIME")
+                )
+            if "description" not in drawing_columns:
+                connection.execute(
+                    text("ALTER TABLE drawing_files ADD COLUMN description TEXT DEFAULT ''")
+                )
+            if "sort_order" not in drawing_columns:
+                connection.execute(
+                    text("ALTER TABLE drawing_files ADD COLUMN sort_order INTEGER DEFAULT 0")
                 )
 
         if "agent_evaluations" in table_names:

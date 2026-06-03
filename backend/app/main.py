@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.database import init_db
-from app.routers import health, projects, submissions
+from app.routers import files, health, projects, submissions
 from app.wiki import resolve_wiki_root
 
 
@@ -25,6 +25,10 @@ local_dev_origins = {
     "http://127.0.0.1:5173",
     "http://localhost:5174",
     "http://127.0.0.1:5174",
+    "http://localhost:4173",
+    "http://127.0.0.1:4173",
+    "http://localhost:4174",
+    "http://127.0.0.1:4174",
 }
 configured_origins = {
     origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()
@@ -43,6 +47,7 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(projects.router)
 app.include_router(submissions.router)
+app.include_router(files.router)
 app.mount(
     "/uploads",
     StaticFiles(directory=settings.upload_dir, check_dir=False),

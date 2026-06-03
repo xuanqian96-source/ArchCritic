@@ -1,0 +1,10 @@
+<svg preserveAspectRatio="none" width="100%" height="100%" overflow="visible" style="display: block;" viewBox="0 0 360 190" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Drawing Preview">
+<rect x="0.5" y="0.5" width="359" height="189" rx="13.5" fill="var(--fill-0, #FBFCFE)"/>
+<rect x="0.5" y="0.5" width="359" height="189" rx="13.5" stroke="var(--stroke-0, #E8EBEF)"/>
+<rect id="Program block A" x="43.7" y="34.7" width="99.8" height="56" rx="5.5" fill="var(--fill-0, #E6F0FF)" stroke="var(--stroke-0, #3B82F6)"/>
+<rect id="Program block B" x="173.3" y="42.3" width="121.4" height="40.8" rx="5.5" fill="var(--fill-0, #E6F8ED)" stroke="var(--stroke-0, #22C55E)"/>
+<rect id="Core" x="137.3" y="103.1" width="63.8" height="40.8" rx="5.5" fill="var(--fill-0, #FFE8EC)" stroke="var(--stroke-0, #6C4DFF)"/>
+<line id="Path" x1="36.1392" y1="147.21" x2="292.817" y2="183.283" stroke="var(--stroke-0, #6C4DFF)" stroke-width="2"/>
+</g>
+</svg>

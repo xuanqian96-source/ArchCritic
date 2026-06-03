@@ -5,8 +5,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import OverallReport, Project, Submission, User
-from app.schemas import ProjectCreate, ProjectRead, SubmissionHistoryRead, SubmissionRead
+from app.models import AgentEvaluation, Attachment, DrawingFile, OverallReport, Project, Submission, User
+from app.schemas import ProjectCreate, ProjectRead, ProjectUpdate, SubmissionHistoryRead, SubmissionRead
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -25,9 +25,93 @@ async def create_project(
         building_type=payload.building_type,
         owner_name=payload.owner_name,
         grade=payload.grade,
+        site_location=payload.site_location,
+        course_name=payload.course_name,
         user_id=owner.id,
     )
     db.add(project)
+    db.commit()
+    db.refresh(project)
+    return project
+
+
+@router.patch("/{project_id}", response_model=ProjectRead)
+async def update_project(
+    project_id: int, payload: ProjectUpdate, db: Session = Depends(get_db)
+) -> Project:
+    """修改项目基础信息。"""
+    project = db.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="项目不存在。")
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(project, field, value)
+    db.commit()
+    db.refresh(project)
+    return project
+
+
+@router.post("/{project_id}/clone", response_model=ProjectRead, status_code=status.HTTP_201_CREATED)
+async def clone_project(project_id: int, db: Session = Depends(get_db)) -> Project:
+    """继承已有项目的基础信息，新建一个独立项目。"""
+    source = db.get(Project, project_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="项目不存在。")
+    owner = User(name=source.owner_name, role="student")
+    db.add(owner)
+    db.flush()
+    project = Project(
+        name=source.name,
+        building_type=source.building_type,
+        owner_name=source.owner_name,
+        grade=source.grade,
+        site_location=source.site_location,
+        course_name=source.course_name,
+        user_id=owner.id,
+    )
+    db.add(project)
+    db.flush()
+    source_submission = db.execute(
+        select(Submission)
+        .where(Submission.project_id == source.id)
+        .order_by(Submission.id.desc())
+    ).scalars().first()
+    if source_submission is not None:
+        submission = Submission(
+            project_id=project.id,
+            title=source_submission.title,
+            design_stage=source_submission.design_stage,
+            description=source_submission.description,
+            image_urls=list(source_submission.image_urls or []),
+            status="draft",
+            enabled_agents=list(source_submission.enabled_agents or []),
+            selected_model_provider=source_submission.selected_model_provider,
+            selected_model_name=source_submission.selected_model_name,
+        )
+        db.add(submission)
+        db.flush()
+        source_drawings = db.execute(
+            select(DrawingFile).where(DrawingFile.submission_id == source_submission.id)
+        ).scalars()
+        for drawing in source_drawings:
+            db.add(DrawingFile(
+                submission_id=submission.id,
+                drawing_type=drawing.drawing_type,
+                original_name=drawing.original_name,
+                file_url=drawing.file_url,
+                mime_type=drawing.mime_type,
+                description=drawing.description,
+                sort_order=drawing.sort_order,
+            ))
+        source_attachments = db.execute(
+            select(Attachment).where(Attachment.submission_id == source_submission.id)
+        ).scalars()
+        for attachment in source_attachments:
+            db.add(Attachment(
+                submission_id=submission.id,
+                original_name=attachment.original_name,
+                file_url=attachment.file_url,
+                mime_type=attachment.mime_type,
+            ))
     db.commit()
     db.refresh(project)
     return project
@@ -82,14 +166,19 @@ async def list_project_history(
         .order_by(Submission.id.asc())
     ).all()
 
-    return [
-        SubmissionHistoryRead(
+    items = []
+    for submission, report in rows:
+        scores = db.execute(
+            select(AgentEvaluation).where(AgentEvaluation.submission_id == submission.id)
+        ).scalars()
+        items.append(SubmissionHistoryRead(
             id=submission.id,
             title=submission.title,
             design_stage=submission.design_stage,
             created_at=submission.created_at,
             overall_score=report.overall_score if report else None,
             grade=report.grade if report else None,
-        )
-        for submission, report in rows
-    ]
+            summary=report.summary if report else "",
+            dimension_scores={item.dimension: item.score for item in scores},
+        ))
+    return items

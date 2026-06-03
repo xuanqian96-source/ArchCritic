@@ -1,0 +1,111 @@
+/* 统一样式：保留 Figma 基准色、阴影和画布尺寸，布局主要由 Tailwind 工具类完成。 */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&family=Noto+Sans+SC:wght@400;500;600;700;900&display=swap");
+@import "tailwindcss";
+
+:root {
+  color: #171719;
+  font-family: "Noto Sans SC", "Inter", "Microsoft YaHei", sans-serif;
+  background: #f4f6f8;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  overflow: hidden;
+  background: #f4f6f8;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.font-inter {
+  font-family: "Inter", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+}
+
+.font-chat {
+  font-family: "Inter", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+}
+
+.canvas-frame {
+  position: absolute;
+  transform-origin: top left;
+}
+
+.canvas-content {
+  width: 1536px;
+  height: 820px;
+}
+
+.canvas-content > div {
+  background-color: transparent !important;
+}
+
+
+.figma-shadow {
+  box-shadow: 0 1px 2px rgba(17, 19, 24, 0.03), 0 18px 46px -26px rgba(17, 19, 24, 0.06);
+}
+
+.sidebar-shadow {
+  box-shadow: 0 20px 24px rgba(23, 23, 26, 0.1);
+}
+
+.panel {
+  border: 1px solid #e8ebef;
+  background: #fafbfc;
+  border-radius: 24px;
+}
+
+.white-panel {
+  border: 1px solid #e8ebef;
+  background: #fff;
+  border-radius: 20px;
+}
+
+.figma-scroll-content {
+  scrollbar-width: none;
+}
+
+.figma-scroll-content::-webkit-scrollbar {
+  display: none;
+}
+
+.sidebar-scroll {
+  overflow-x: hidden;
+  scrollbar-color: #cbd2dc transparent;
+  scrollbar-width: thin;
+}
+
+.sidebar-scroll::-webkit-scrollbar {
+  width: 7px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: #cbd2dc;
+  background-clip: padding-box;
+}
+
+.history-grid {
+  background-image:
+    linear-gradient(#eef0f3 1px, transparent 1px),
+    linear-gradient(90deg, #eef0f3 1px, transparent 1px);
+  background-size: 58px 44px;
+}

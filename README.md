@@ -23,6 +23,7 @@
 - “查看历史版本”会打开已保存提交卡片，点击后可切换回当时的项目信息、图纸和评图报告。
 - 底部历史版本和多 Agent 状态会根据后端返回结果更新；评审矩阵和对话区会显示各 Agent 的头像；刷新页面后会自动恢复上次项目、图纸、报告和历史记录。
 - 页面可直接看到与早期演示 HTML 一致的三栏评图工作台界面。
+- 已在 `frontend-v1-replica/` 按 Figma“前端 V1”制作 React 新版界面并接回现有 FastAPI 后端；旧版 `frontend/index.html` 仍保留不动，便于对照和回退。
 
 ## 技术架构
 
@@ -30,6 +31,7 @@
 - 项目、提交、图纸记录和报告数据保存在 SQLite 中，上传图片保存在本地 `uploads` 文件夹。
 - 知识库依据从项目外层的 `知识库测试版` 检索，该目录可直接用 Obsidian 打开，后续可继续升级为向量检索或知识图谱。
 - 前端使用 Vite 启动本地页面，目前入口已替换为原 ArchCritic Demo 的静态工作台界面。
+- 新版 Figma 前端位于 `frontend-v1-replica/`，使用 React、TypeScript、Tailwind CSS 和 Vite，已接通项目、图纸、任务书、评图、报告、知识追溯、历史版本和追问。迁移计划见 `docs/plans/2026-05-31-frontend-v1-interaction-and-backend-migration-plan.md`。
 - 评图结果支持四种模式：`mock` 用于本地演示，`openai`、`dashscope` 和 `gemini` 会读取设计说明、上传图纸和检索到的 Wiki 依据；在方案阶段先顺序调用四个专项 Agent，再由综合评审 Agent 输出最终报告。
 - 方案阶段多 Agent 默认把总评审预算控制在 285 秒内，每个新增专项 Agent 输出事实识别、分项评分、不确定观察和修改建议，综合评审只汇总专项结果。
 - 真实模型评图会先要求模型列出图纸事实，再进行评价；输出结构统一为 `observed_facts + sub_scores`，与设计说明或事实识别冲突的内容会降级为不确定观察，避免错误地进入“必须修改”。
@@ -78,6 +80,17 @@ Gemini 2.5 模型在后端会自动关闭额外思考参数，避免短输出上
 
 ### 前端
 
+新版 React 前端：
+
+```bash
+cd /mnt/e/claude/论文/ArchCritic/frontend-v1-replica
+npm run dev -- --host 127.0.0.1 --port 4173
+```
+
+打开终端中显示的本地地址。若 `4173` 已占用，Vite 会自动使用下一个端口。
+
+旧版演示前端仍可单独运行：
+
 ```bash
 cd /mnt/e/claude/论文/ArchCritic/frontend
 npm install
@@ -92,7 +105,7 @@ npm run dev -- --host 127.0.0.1 --port 5173
 如需打包前端，可执行：
 
 ```bash
-cd /mnt/e/claude/论文/ArchCritic/frontend
+cd /mnt/e/claude/论文/ArchCritic/frontend-v1-replica
 npm run build
 ```
 
@@ -108,11 +121,13 @@ cd /mnt/e/claude/论文/ArchCritic/backend
 ### 前端测试
 
 ```bash
-cd /mnt/e/claude/论文/ArchCritic/frontend
-npm run test
+cd /mnt/e/claude/论文/ArchCritic/frontend-v1-replica
+npm run typecheck
+npm test
+npm run build
 ```
 
-当前前端为静态页面，暂无完整自动化测试；本阶段以构建检查和关键交互检查为主。
+浏览器完整交互验收脚本位于 `backend/scripts/verify_frontend_v1_browser.ps1`。
 
 ## 搜索记录
 
@@ -122,6 +137,10 @@ npm run test
 
 ## 已完成功能列表
 
+- 新版 React 前端迁移：在不修改旧版前端的前提下，接通草稿、阶段与 Agent、图纸、任务书、流式评图、暂停、报告详情、知识追溯、历史恢复、项目继承、报告导出和追问。
+- 新版项目侧栏：同名项目会归并展示，按提交时间生成 V1、V2 等历史版本；首页和侧栏共用项目状态，切换页面时保留已有卡片。
+- 新版资料管理接口：支持图纸类型与说明修改、单张删除、批量删除、任务书上传和继承已有项目最近一次资料。
+- 新版浏览器验收脚本：可按真实页面顺序完成保存、提交、评图、报告详情、知识追溯、历史和追问，并保存报告页截图。
 - 后端健康检查接口。
 - SQLite 数据模型和基础数据库初始化。
 - 项目创建与列表接口。
@@ -152,7 +171,9 @@ npm run test
 - ArchCritic Demo 静态工作台界面已接入本地前端入口。
 - 左侧项目信息、设计阶段选择、本地图片上传、中间图纸查看、后端保存、右侧报告动态渲染、历史版本和知识库追溯已具备前端交互。
 - Demo 后端产品设计文档：`docs/plans/2026-05-12-demo-backend-product-design.md`。
+- 新版前端视觉与文字层级设计规范：`DESIGN.md`。
 - Obsidian 知识库与模型调用路线文档：`docs/plans/2026-05-19-obsidian-wiki-knowledge-graph-route.md`。
+- 新版 React 前端交互与后端迁移计划书：`docs/plans/2026-05-31-frontend-v1-interaction-and-backend-migration-plan.md`。
 - 后端与前端基础测试。
 
 ## 待办事项

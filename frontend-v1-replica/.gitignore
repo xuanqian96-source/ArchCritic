@@ -1,0 +1,25 @@
+# 本地依赖与构建产物由命令生成，不纳入版本记录。
+node_modules
+dist
+.npm-cache
+.figma-reference
+.local-screens
+.chrome-profile
+
+# Figma 导出时产生的无扩展名重复资源，代码只引用 .png / .svg 文件。
+public/assets/agent-flow
+public/assets/agent-form
+public/assets/agent-site
+public/assets/agent-structure
+public/assets/login-preview
+public/assets/processing-scene
+public/assets/v1/agent-flow
+public/assets/v1/agent-form
+public/assets/v1/agent-glow
+public/assets/v1/agent-site
+public/assets/v1/agent-structure
+public/assets/v1/login-preview
+public/assets/v1/processing-scene
+public/assets/v1/report-avatar
+public/assets/v1/toggle
+public/assets/v1/upload-plan

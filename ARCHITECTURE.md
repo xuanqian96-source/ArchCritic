@@ -15,7 +15,8 @@
 - `backend/app/agents/prompts/scheme_agents_v1.py`：保存方案阶段场地、几何形式、结构和综合评审 Agent 的规则、评分项与提示词模板。
 - `backend/app/routers/health.py`：提供健康检查接口。
 - `backend/app/routers/projects.py`：负责项目创建、项目列表、项目详情和提交历史。
-- `backend/app/routers/submissions.py`：负责方案提交、图纸上传、图纸列表、报告查询、Wiki 依据查询和评图调用。
+- `backend/app/routers/submissions.py`：负责方案提交、图纸上传、任务书、报告查询与导出、Wiki 依据、暂停评图、报告追问和评图调用。
+- `backend/app/routers/files.py`：负责图纸类型与说明修改、单张删除和批量删除。
 - `backend/app/llm/base.py`：定义模型调用统一接口。
 - `backend/app/llm/client.py`：根据配置或本次请求参数返回演示模型或真实模型客户端。
 - `backend/app/llm/dashscope_files.py`：调用百炼上传策略接口，把本地图纸上传为模型可读取的临时 `oss://` URL，并对临时上传失败做重试。
@@ -23,8 +24,13 @@
 - `frontend/index.html`：当前本地前端入口，承载 ArchCritic Demo 工作台界面、项目信息更新、多张高清图片上传、模型选择、后端保存、刷新恢复、图纸查看、Agent 头像进度、知识卡片交互、专项评分展开和历史版本切换。
 - `frontend/package.json`：前端运行脚本，当前只保留静态 Vite 页面所需配置。
 - `frontend/vite.config.js`：Vite 本地开发配置。
+- `frontend-v1-replica/`：按 Figma“前端 V1”制作的 React + TypeScript + Tailwind CSS 新版界面。当前已连接现有 FastAPI 后端，但不替换旧版入口。
+- `frontend-v1-replica/src/state/projectGroups.ts`：把同名项目按时间归并为一个项目，生成侧栏和首页共用的版本列表与显示缓存。
+- `DESIGN.md`：记录新版前端的视觉规范、页面布局、颜色、圆角、阴影、组件规则和 typography scale，供后续 Figma 与 React 修改对齐。
+- `backend/scripts/verify_frontend_v1_browser.ps1`：在 Windows Chrome 中模拟新版前端完整用户流程并保存报告页截图。
 - `docs/plans/2026-05-19-obsidian-wiki-knowledge-graph-route.md`：说明 Obsidian 知识库如何整理为 Wiki、索引和后续知识图谱，并被评图模型调用。
 - `docs/plans/2026-05-12-demo-backend-product-design.md`：按当前前端界面梳理后端模块、接口、用户流程和 Demo 开发顺序。
+- `docs/plans/2026-05-31-frontend-v1-interaction-and-backend-migration-plan.md`：逐页整理新版 React 前端按钮交互、现有接口映射、缺失接口和分阶段迁移顺序。
 
 ## 模块之间的调用关系
 
@@ -44,12 +50,15 @@
 - 前端专项评分条可打开评分卡片，读取 `agent_evaluations.details` 展示分项分数、理由、证据、已确认事实、信息缺口和不确定观察。
 - 前端历史版本按钮会读取项目提交历史，弹出已保存版本卡片；点击版本后重新读取该提交的表单信息、图纸、报告和知识库快照，并切换工作台状态。
 - 前端评图完成后把最近项目和提交记录到浏览器本地，刷新页面时重新从后端读取项目、图纸、报告和历史版本。
+- 新版 React 前端通过统一工作区状态调用现有 FastAPI 后端。旧版 `frontend/index.html` 仍作为已有交互逻辑参考，新功能按 React 状态、API 模块和页面组件重新组织。
+- 新版首页和侧栏共用同名项目分组状态：后端中的同名项目会合并展示，提交按时间编号为 V1、V2 等版本，切换页面时优先复用缓存内容。
 
 ## 关键设计决定和原因
 
 - 当前数据库先使用 SQLite，原因是 P0 目标是先把最小闭环跑通。
 - 当前评图先使用演示结果，原因是先验证提交流程和界面展示，不在 P0 阶段追求真实学术评图质量。
 - 当前优先把 ArchCritic Demo 作为前端基础，原因是先统一演示界面，再逐步把真实后端接口接回页面。
+- 新版 Figma 界面在 `frontend-v1-replica/` 独立接入和验收，原因是保留旧版入口可以避免迁移期间影响已有演示。
 - 上传文件先保存在本地 `uploads` 目录，原因是当前目标是稳定演示和本地验证，不急于引入对象存储。
 - 第二、三步已改用 `知识库测试版` 作为 Obsidian Wiki 原型，原因是该目录同时适合团队维护和后端读取。
 - 旧 React 验证页已删除，原因是当前阶段只保留一套前端入口，减少维护混乱。

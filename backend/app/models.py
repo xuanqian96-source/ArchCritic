@@ -33,6 +33,8 @@ class Project(Base):
     building_type: Mapped[str] = mapped_column(String(100))
     owner_name: Mapped[str] = mapped_column(String(100))
     grade: Mapped[str] = mapped_column(String(100), default="")
+    site_location: Mapped[str] = mapped_column(String(200), default="")
+    course_name: Mapped[str] = mapped_column(String(200), default="")
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -53,8 +55,15 @@ class Submission(Base):
     design_stage: Mapped[str] = mapped_column(String(50))
     description: Mapped[str] = mapped_column(Text)
     image_urls: Mapped[list[str]] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(30), default="draft")
+    enabled_agents: Mapped[list[str]] = mapped_column(JSON, default=list)
+    selected_model_provider: Mapped[str] = mapped_column(String(50), default="mock")
+    selected_model_name: Mapped[str] = mapped_column(String(100), default="demo")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
     project: Mapped[Project] = relationship(back_populates="submissions")
@@ -64,6 +73,8 @@ class Submission(Base):
     drawing_files: Mapped[list["DrawingFile"]] = relationship(
         back_populates="submission"
     )
+    attachments: Mapped[list["Attachment"]] = relationship(back_populates="submission")
+    chat_messages: Mapped[list["ChatMessage"]] = relationship(back_populates="submission")
     overall_report: Mapped["OverallReport | None"] = relationship(
         back_populates="submission", uselist=False
     )
@@ -80,6 +91,8 @@ class DrawingFile(Base):
     original_name: Mapped[str] = mapped_column(String(255))
     file_url: Mapped[str] = mapped_column(String(500))
     mime_type: Mapped[str] = mapped_column(String(100))
+    description: Mapped[str] = mapped_column(Text, default="")
+    sort_order: Mapped[int] = mapped_column(default=0)
     model_file_url: Mapped[str] = mapped_column(String(500), default="")
     model_file_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -89,6 +102,39 @@ class DrawingFile(Base):
     )
 
     submission: Mapped[Submission] = relationship(back_populates="drawing_files")
+
+
+class Attachment(Base):
+    """保存任务书等补充资料文件。"""
+
+    __tablename__ = "attachments"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    submission_id: Mapped[int] = mapped_column(ForeignKey("submissions.id"))
+    original_name: Mapped[str] = mapped_column(String(255))
+    file_url: Mapped[str] = mapped_column(String(500))
+    mime_type: Mapped[str] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    submission: Mapped[Submission] = relationship(back_populates="attachments")
+
+
+class ChatMessage(Base):
+    """保存报告页中用户与系统的继续追问记录。"""
+
+    __tablename__ = "chat_messages"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    submission_id: Mapped[int] = mapped_column(ForeignKey("submissions.id"))
+    role: Mapped[str] = mapped_column(String(20))
+    content: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    submission: Mapped[Submission] = relationship(back_populates="chat_messages")
 
 
 class AgentEvaluation(Base):
