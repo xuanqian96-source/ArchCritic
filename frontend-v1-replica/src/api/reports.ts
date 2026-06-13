@@ -18,11 +18,11 @@ export function downloadReport(submissionId: number): void {
 }
 
 // 发送报告追问。
-export function sendChat(submissionId: number, content: string): Promise<ChatMessage> {
+export function sendChat(submissionId: number, content: string, modelProvider?: string, modelName?: string): Promise<ChatMessage> {
   return requestJson(`/api/submissions/${submissionId}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, model_provider: modelProvider, model_name: modelName }),
   });
 }
 

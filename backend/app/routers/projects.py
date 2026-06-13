@@ -1,14 +1,25 @@
 """提供项目创建与列表接口，供前端项目管理页面调用。"""
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import AgentEvaluation, Attachment, DrawingFile, OverallReport, Project, Submission, User
+from app.models import AgentEvaluation, Attachment, ChatMessage, DrawingFile, OverallReport, Project, ReportReference, Submission, User
 from app.schemas import ProjectCreate, ProjectRead, ProjectUpdate, SubmissionHistoryRead, SubmissionRead
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
+
+
+def delete_submission_tree(db: Session, submission_id: int) -> None:
+    """删除一个提交版本关联的报告、图纸记录和追问记录。"""
+    db.execute(delete(ReportReference).where(ReportReference.submission_id == submission_id))
+    db.execute(delete(ChatMessage).where(ChatMessage.submission_id == submission_id))
+    db.execute(delete(Attachment).where(Attachment.submission_id == submission_id))
+    db.execute(delete(DrawingFile).where(DrawingFile.submission_id == submission_id))
+    db.execute(delete(AgentEvaluation).where(AgentEvaluation.submission_id == submission_id))
+    db.execute(delete(OverallReport).where(OverallReport.submission_id == submission_id))
+    db.execute(delete(Submission).where(Submission.id == submission_id))
 
 
 @router.post("", response_model=ProjectRead, status_code=status.HTTP_201_CREATED)
@@ -50,9 +61,29 @@ async def update_project(
     return project
 
 
+@router.delete("/{project_id}")
+async def delete_project(project_id: int, db: Session = Depends(get_db)) -> dict:
+    """删除项目及其全部提交版本。"""
+    project = db.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="项目不存在。")
+    submission_ids = list(db.execute(
+        select(Submission.id).where(Submission.project_id == project_id)
+    ).scalars().all())
+    for submission_id in submission_ids:
+        delete_submission_tree(db, submission_id)
+    db.delete(project)
+    db.commit()
+    return {"deleted": [project_id], "submissions": submission_ids}
+
+
 @router.post("/{project_id}/clone", response_model=ProjectRead, status_code=status.HTTP_201_CREATED)
-async def clone_project(project_id: int, db: Session = Depends(get_db)) -> Project:
-    """继承已有项目的基础信息，新建一个独立项目。"""
+async def clone_project(
+    project_id: int,
+    source_submission_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> Project:
+    """继承已有项目的基础信息，可指定某个历史提交版本。"""
     source = db.get(Project, project_id)
     if source is None:
         raise HTTPException(status_code=404, detail="项目不存在。")
@@ -70,11 +101,16 @@ async def clone_project(project_id: int, db: Session = Depends(get_db)) -> Proje
     )
     db.add(project)
     db.flush()
-    source_submission = db.execute(
-        select(Submission)
-        .where(Submission.project_id == source.id)
-        .order_by(Submission.id.desc())
-    ).scalars().first()
+    if source_submission_id is not None:
+        source_submission = db.get(Submission, source_submission_id)
+        if source_submission is None or source_submission.project_id != source.id:
+            raise HTTPException(status_code=404, detail="项目版本不存在。")
+    else:
+        source_submission = db.execute(
+            select(Submission)
+            .where(Submission.project_id == source.id)
+            .order_by(Submission.id.desc())
+        ).scalars().first()
     if source_submission is not None:
         submission = Submission(
             project_id=project.id,

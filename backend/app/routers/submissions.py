@@ -3,13 +3,14 @@
 import asyncio
 import json
 import re
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import PlainTextResponse, StreamingResponse
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.agents.function_agent import (
@@ -54,14 +55,31 @@ from app.wiki import load_wiki_references
 router = APIRouter(prefix="/api/submissions", tags=["submissions"])
 
 REAL_LLM_PROVIDERS = {"openai", "dashscope", "gemini"}
-ALLOWED_DRAWING_TYPES = {"site", "plan", "analysis", "render"}
+ALLOWED_DRAWING_TYPES = {
+    "site",
+    "plan",
+    "plan-2",
+    "plan-3",
+    "plan-4",
+    "plan-5",
+    "plan-6",
+    "plan-7",
+    "section",
+    "elevation",
+    "analysis",
+    "render",
+}
 ALLOWED_IMAGE_TYPES = {
     "image/png": ".png",
     "image/jpeg": ".jpg",
     "image/webp": ".webp",
     "image/gif": ".gif",
 }
-MAX_UPLOAD_BYTES = 15 * 1024 * 1024
+ALLOWED_DRAWING_FILE_TYPES = {
+    **ALLOWED_IMAGE_TYPES,
+    "application/pdf": ".pdf",
+}
+MAX_UPLOAD_BYTES = 30 * 1024 * 1024
 MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
 ALLOWED_ATTACHMENT_TYPES = {
     "application/pdf": ".pdf",
@@ -151,6 +169,26 @@ async def update_submission(
     return submission
 
 
+@router.delete("/{submission_id}")
+async def delete_submission(
+    submission_id: int, db: Session = Depends(get_db)
+) -> dict:
+    """删除一个版本提交及其报告、图纸记录和追问记录。"""
+    submission = db.get(Submission, submission_id)
+    if submission is None:
+        raise HTTPException(status_code=404, detail="未找到对应的方案提交。")
+    db.execute(delete(ReportReference).where(ReportReference.submission_id == submission_id))
+    db.execute(delete(ChatMessage).where(ChatMessage.submission_id == submission_id))
+    db.execute(delete(Attachment).where(Attachment.submission_id == submission_id))
+    db.execute(delete(DrawingFile).where(DrawingFile.submission_id == submission_id))
+    db.execute(delete(AgentEvaluation).where(AgentEvaluation.submission_id == submission_id))
+    db.execute(delete(OverallReport).where(OverallReport.submission_id == submission_id))
+    db.delete(submission)
+    db.commit()
+    CANCELLED_SUBMISSIONS.discard(submission_id)
+    return {"deleted": [submission_id]}
+
+
 @router.get("/{submission_id}", response_model=SubmissionRead)
 async def get_submission(
     submission_id: int, db: Session = Depends(get_db)
@@ -182,21 +220,31 @@ async def upload_submission_file(
         raise HTTPException(status_code=400, detail="图纸类型不在支持范围内。")
 
     mime_type = file.content_type or ""
-    extension = ALLOWED_IMAGE_TYPES.get(mime_type)
+    extension = ALLOWED_DRAWING_FILE_TYPES.get(mime_type)
     if extension is None:
-        raise HTTPException(status_code=400, detail="当前只支持图片文件。")
+        raise HTTPException(status_code=400, detail="当前只支持图片或 PDF 图纸。")
 
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="上传文件不能为空。")
     if len(content) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=400, detail="单张图片不能超过 15MB。")
+        raise HTTPException(status_code=400, detail="单个图纸文件不能超过 30MB。")
+    if mime_type == "application/pdf" and count_pdf_pages(content) != 1:
+        raise HTTPException(status_code=400, detail="PDF 图纸仅支持上传单页文件，请拆分后重新上传。")
 
     settings = get_settings()
-    relative_path = Path("submissions") / str(submission_id) / f"{uuid4().hex}{extension}"
+    stored_mime_type = mime_type
+    stored_extension = extension
+    if mime_type == "application/pdf":
+        stored_mime_type = "image/png"
+        stored_extension = ".png"
+    relative_path = Path("submissions") / str(submission_id) / f"{uuid4().hex}{stored_extension}"
     target_path = Path(settings.upload_dir) / relative_path
     target_path.parent.mkdir(parents=True, exist_ok=True)
-    target_path.write_bytes(content)
+    if mime_type == "application/pdf":
+        convert_pdf_to_png(content, target_path)
+    else:
+        target_path.write_bytes(content)
 
     file_url = f"/uploads/{relative_path.as_posix()}"
     drawing_file = DrawingFile(
@@ -204,7 +252,7 @@ async def upload_submission_file(
         drawing_type=drawing_type,
         original_name=file.filename or "未命名图纸",
         file_url=file_url,
-        mime_type=mime_type,
+        mime_type=stored_mime_type,
     )
 
     submission.image_urls = [*(submission.image_urls or []), file_url]
@@ -212,6 +260,39 @@ async def upload_submission_file(
     db.commit()
     db.refresh(drawing_file)
     return drawing_file
+
+
+def count_pdf_pages(content: bytes) -> int:
+    """读取 PDF 页数；当前图纸上传只接受单页 PDF。"""
+    if not content.startswith(b"%PDF"):
+        return 0
+    page_markers = re.findall(rb"/Type\s*/Page\b", content)
+    if page_markers:
+        return len(page_markers)
+    count_match = re.search(rb"/Count\s+(\d+)", content)
+    if count_match:
+        return int(count_match.group(1))
+    return 0
+
+
+def convert_pdf_to_png(content: bytes, target_path: Path) -> None:
+    """把单页 PDF 转为 PNG，避免前端使用浏览器 PDF 查看器。"""
+    source_path = target_path.with_suffix(".source.pdf")
+    output_prefix = target_path.with_suffix("")
+    try:
+        source_path.write_bytes(content)
+        completed = subprocess.run(
+            ["pdftoppm", "-singlefile", "-png", "-r", "180", str(source_path), str(output_prefix)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if completed.returncode != 0 or not target_path.is_file():
+            raise HTTPException(status_code=400, detail="PDF 图纸转换失败，请导出为 PNG 后重新上传。")
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail="服务器缺少 PDF 转图片工具。") from exc
+    finally:
+        source_path.unlink(missing_ok=True)
 
 
 @router.get("/{submission_id}/files", response_model=list[DrawingFileRead])
@@ -285,6 +366,29 @@ async def list_submission_attachments(
     return list(result.scalars().all())
 
 
+@router.delete("/attachments/{attachment_id}")
+async def delete_submission_attachment(
+    attachment_id: int, db: Session = Depends(get_db)
+) -> dict:
+    """删除一个任务书或补充资料附件。"""
+    attachment = db.get(Attachment, attachment_id)
+    if attachment is None:
+        raise HTTPException(status_code=404, detail="未找到对应附件。")
+    usage_count = db.scalar(
+        select(func.count()).select_from(Attachment).where(
+            Attachment.file_url == attachment.file_url
+        )
+    )
+    if usage_count == 1 and attachment.file_url.startswith("/uploads/"):
+        upload_root = Path(get_settings().upload_dir).resolve()
+        file_path = (upload_root / attachment.file_url.removeprefix("/uploads/")).resolve()
+        if upload_root in file_path.parents and file_path.is_file():
+            file_path.unlink()
+    db.delete(attachment)
+    db.commit()
+    return {"deleted": [attachment_id]}
+
+
 @router.post("/{submission_id}/cancel-evaluation", response_model=SubmissionRead)
 async def cancel_submission_evaluation(
     submission_id: int, db: Session = Depends(get_db)
@@ -319,6 +423,88 @@ async def export_submission_report(
     )
 
 
+def build_chat_fallback_answer(report: OverallReport | None, content: str) -> str:
+    """根据已生成报告构造稳定的本地追问回答。"""
+    if report is None:
+        return "报告仍在生成中，请稍后再继续追问。"
+    if "必须" in content or "修改" in content:
+        items = report.must_fix[:3] or ["当前报告没有明确列出必须修改项。"]
+        return "本轮必须修改项：" + "；".join(items)
+    items = report.should_improve[:2] or report.must_fix[:2] or ["建议先复核总评中提到的主要问题。"]
+    return f"结合本次评分，{report.summary} 建议先复核：" + "；".join(items)
+
+
+def build_chat_prompt(
+    submission: Submission,
+    report: OverallReport,
+    content: str,
+    db: Session,
+) -> str:
+    """把项目、报告和追问整理为模型可直接回答的文本。"""
+    evaluations = db.execute(
+        select(AgentEvaluation).where(AgentEvaluation.submission_id == submission.id)
+    ).scalars().all()
+    dimension_lines = [
+        f"- {item.dimension}：{round(item.score)}分。{item.summary}"
+        for item in evaluations[:6]
+    ]
+    return "\n".join([
+        f"项目名称：{submission.project.name}",
+        f"设计阶段：{submission.design_stage}",
+        f"综合评分：{round(report.overall_score)}，等级：{report.grade}",
+        f"总评：{report.summary}",
+        "主要评分维度：",
+        "\n".join(dimension_lines) or "- 暂无专项评分。",
+        "必须修改：" + "；".join(report.must_fix[:5]),
+        "重点优化：" + "；".join(report.should_improve[:5]),
+        "用户追问：" + content,
+    ])
+
+
+def generate_chat_answer(
+    submission: Submission,
+    report: OverallReport | None,
+    payload: ChatMessageCreate,
+    db: Session,
+) -> str:
+    """优先调用用户选择的模型回答，失败时回退到稳定本地回答。"""
+    fallback = build_chat_fallback_answer(report, payload.content)
+    if report is None:
+        return fallback
+    try:
+        provider = resolve_llm_provider(payload.model_provider or submission.selected_model_provider)
+        model = resolve_llm_model(provider, payload.model_name or submission.selected_model_name)
+        if provider not in REAL_LLM_PROVIDERS:
+            return fallback
+        llm_client = get_llm_client(provider, model)
+        create_kwargs = {
+            "model": llm_client.model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "你是 ArchCritic 的评图报告助手。只根据给定报告回答，语气简洁，必须用中文。",
+                },
+                {"role": "user", "content": build_chat_prompt(submission, report, payload.content, db)},
+            ],
+            "temperature": 0.3,
+            "max_tokens": min(llm_client.max_tokens, 800),
+        }
+        if llm_client.extra_body:
+            create_kwargs["extra_body"] = llm_client.extra_body
+        if llm_client.reasoning_effort:
+            create_kwargs["reasoning_effort"] = llm_client.reasoning_effort
+        try:
+            response = llm_client.client.chat.completions.create(**create_kwargs)
+        except TypeError:
+            create_kwargs.pop("extra_body", None)
+            create_kwargs.pop("reasoning_effort", None)
+            response = llm_client.client.chat.completions.create(**create_kwargs)
+        answer = response.choices[0].message.content if response.choices else ""
+        return answer.strip() or fallback
+    except Exception:
+        return fallback
+
+
 @router.post("/{submission_id}/chat", response_model=ChatMessageRead)
 async def create_chat_message(
     submission_id: int, payload: ChatMessageCreate, db: Session = Depends(get_db)
@@ -330,12 +516,7 @@ async def create_chat_message(
     report = db.execute(
         select(OverallReport).where(OverallReport.submission_id == submission_id)
     ).scalar_one_or_none()
-    if report is None:
-        answer = "报告仍在生成中，请稍后再继续追问。"
-    elif "必须" in payload.content or "修改" in payload.content:
-        answer = "本轮必须修改项：" + "；".join(report.must_fix[:3])
-    else:
-        answer = f"结合本次评分，{report.summary} 建议先复核：" + "；".join(report.should_improve[:2])
+    answer = generate_chat_answer(submission, report, payload, db)
     db.add(ChatMessage(submission_id=submission_id, role="user", content=payload.content))
     response = ChatMessage(submission_id=submission_id, role="assistant", content=answer)
     db.add(response)

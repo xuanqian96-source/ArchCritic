@@ -21,10 +21,9 @@
 - `backend/app/llm/client.py`：根据配置或本次请求参数返回演示模型或真实模型客户端。
 - `backend/app/llm/dashscope_files.py`：调用百炼上传策略接口，把本地图纸上传为模型可读取的临时 `oss://` URL，并对临时上传失败做重试。
 - `backend/app/llm/openai_client.py`：封装 OpenAI 兼容调用入口，当前支持 OpenAI、阿里云百炼和 Gemini，并把功能 Agent 结果转换为前端报告结构。
-- `frontend/index.html`：当前本地前端入口，承载 ArchCritic Demo 工作台界面、项目信息更新、多张高清图片上传、模型选择、后端保存、刷新恢复、图纸查看、Agent 头像进度、知识卡片交互、专项评分展开和历史版本切换。
-- `frontend/package.json`：前端运行脚本，当前只保留静态 Vite 页面所需配置。
-- `frontend/vite.config.js`：Vite 本地开发配置。
-- `frontend-v1-replica/`：按 Figma“前端 V1”制作的 React + TypeScript + Tailwind CSS 新版界面。当前已连接现有 FastAPI 后端，但不替换旧版入口。
+- `frontend-v1-replica/`：按 Figma“前端 V1”制作的 React + TypeScript + Tailwind CSS 新版界面。当前是正式前端入口，已连接现有 FastAPI 后端。
+- `frontend-v1-replica/vite.config.ts`：新版前端 Vite 配置，固定 `127.0.0.1:4173`，并在 WSL Windows 挂载盘下使用轮询监听保证热更新。
+- `frontend-v1-replica/scripts/verify-served.mjs`：检查 `4173` 开发服务是否已经返回指定源码标记，用于快速确认前端更新是否生效。
 - `frontend-v1-replica/src/state/projectGroups.ts`：把同名项目按时间归并为一个项目，生成侧栏和首页共用的版本列表与显示缓存。
 - `DESIGN.md`：记录新版前端的视觉规范、页面布局、颜色、圆角、阴影、组件规则和 typography scale，供后续 Figma 与 React 修改对齐。
 - `backend/scripts/verify_frontend_v1_browser.ps1`：在 Windows Chrome 中模拟新版前端完整用户流程并保存报告页截图。
@@ -50,15 +49,16 @@
 - 前端专项评分条可打开评分卡片，读取 `agent_evaluations.details` 展示分项分数、理由、证据、已确认事实、信息缺口和不确定观察。
 - 前端历史版本按钮会读取项目提交历史，弹出已保存版本卡片；点击版本后重新读取该提交的表单信息、图纸、报告和知识库快照，并切换工作台状态。
 - 前端评图完成后把最近项目和提交记录到浏览器本地，刷新页面时重新从后端读取项目、图纸、报告和历史版本。
-- 新版 React 前端通过统一工作区状态调用现有 FastAPI 后端。旧版 `frontend/index.html` 仍作为已有交互逻辑参考，新功能按 React 状态、API 模块和页面组件重新组织。
+- 新版 React 前端通过统一工作区状态调用现有 FastAPI 后端。旧版 `frontend/` 已归档到仓库外的 `../ArchCritic-开发过程历史代码/2026-06-13/frontend-旧版演示前端/`，当前仓库只保留新版前端。
 - 新版首页和侧栏共用同名项目分组状态：后端中的同名项目会合并展示，提交按时间编号为 V1、V2 等版本，切换页面时优先复用缓存内容。
+- 新版 React 前端开发服务固定在 `4173`，修改后可用 `npm run dev:check -- "目标样式或文本"` 确认浏览器服务已经返回新模块。
 
 ## 关键设计决定和原因
 
 - 当前数据库先使用 SQLite，原因是 P0 目标是先把最小闭环跑通。
 - 当前评图先使用演示结果，原因是先验证提交流程和界面展示，不在 P0 阶段追求真实学术评图质量。
-- 当前优先把 ArchCritic Demo 作为前端基础，原因是先统一演示界面，再逐步把真实后端接口接回页面。
-- 新版 Figma 界面在 `frontend-v1-replica/` 独立接入和验收，原因是保留旧版入口可以避免迁移期间影响已有演示。
+- 当前优先维护 `frontend-v1-replica/`，原因是新版前端已经接回真实后端流程。
+- 旧版单文件前端和早期后端 Prompt 占位记录已归档到仓库外历史目录，原因是减少当前代码库冗余，同时保留开发过程参考。
 - 上传文件先保存在本地 `uploads` 目录，原因是当前目标是稳定演示和本地验证，不急于引入对象存储。
 - 第二、三步已改用 `知识库测试版` 作为 Obsidian Wiki 原型，原因是该目录同时适合团队维护和后端读取。
 - 旧 React 验证页已删除，原因是当前阶段只保留一套前端入口，减少维护混乱。
@@ -77,3 +77,4 @@
 - 专项评分详情保存到 `agent_evaluations.details`，原因是总分本身不足以解释 Agent 判断，前端需要展示分项构成和证据。
 - 报告问题只链接本次知识库快照中真实存在的编号，原因是历史报告必须保持引用稳定，避免知识库更新后错链。
 - 前端脚本直接调用本地 `node_modules` 中的 Vite，原因是当前环境下可执行脚本权限不稳定，这种写法更稳。
+- 新版前端在 Vite 中启用文件轮询监听，原因是项目位于 WSL 的 `/mnt/e` Windows 挂载盘，默认文件事件可能漏掉源码变化，导致热更新偶发不生效。

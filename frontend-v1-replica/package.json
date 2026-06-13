@@ -4,7 +4,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0 --port 4173",
+    "dev": "vite --force",
+    "dev:check": "node scripts/verify-served.mjs",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "test": "node scripts/smoke-test.mjs"

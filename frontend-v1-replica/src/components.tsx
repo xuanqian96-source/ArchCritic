@@ -1,9 +1,37 @@
 // 共用组件：承载设计稿中反复出现的画布、侧栏、步骤条、按钮和图纸缩略图。
 import { useEffect, useRef, useState, type PropsWithChildren, type ReactNode } from "react";
 import type { PageProps, Route } from "./App";
+import { deleteProject, updateProject } from "./api/projects";
+import { deleteSubmission, updateSubmission } from "./api/submissions";
+import { readSubmissionRoute, rememberSubmissionRoute } from "./state/flowRoutes";
 import { useProfile, type UserProfile } from "./state/profile";
-import { getCachedProjectGroups, getLatestVersion, loadProjectGroups, type ProjectGroup, type ProjectVersion } from "./state/projectGroups";
+import { getCachedProjectGroups, getLatestVersion, isProjectGroupPinned, loadProjectGroups, readPinnedProjectIds, sortPinnedProjectGroups, type ProjectGroup, type ProjectVersion, writePinnedProjectIds } from "./state/projectGroups";
 import { useWorkspace } from "./state/workspace";
+
+// 判断版本是否仍使用系统默认标题。
+function getVersionLabel(version: ProjectVersion) {
+  const title = version.submission.title.trim();
+  if (title && !title.endsWith("提交")) return title;
+  return version.history?.overall_score == null ? "草稿" : `V${version.versionNumber}`;
+}
+
+// 弹出版本列表或管理菜单后，自动滚动到可见区域。
+function revealSidebarPopup(row: HTMLElement | null) {
+  if (!row) return;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const popup = row.querySelector("[data-sidebar-popup]") as HTMLElement | null;
+      (popup ?? row).scrollIntoView({ block: "nearest" });
+    });
+  });
+}
+
+interface ConfirmAction {
+  title: string;
+  message: string;
+  confirmText: string;
+  onConfirm: () => Promise<void>;
+}
 
 // 固定设计画布，并按浏览器空间等比缩放。
 export function Canvas({ scale, left, top, children }: PropsWithChildren<{ scale: number; left: number; top: number }>) {
@@ -30,7 +58,7 @@ export function Button({
     ghost: "border border-[#9a9ea7] bg-transparent text-[#9a9ea7]",
   };
   return (
-    <button type={type} disabled={disabled} className={`h-10 whitespace-nowrap rounded-[12px] px-5 text-[14px] font-bold disabled:cursor-not-allowed disabled:opacity-60 ${styles[kind]} ${className}`} onClick={onClick}>
+    <button type={type} disabled={disabled} className={`app-action-button h-10 whitespace-nowrap rounded-[12px] px-5 disabled:cursor-not-allowed disabled:opacity-60 ${styles[kind]} ${className}`} onClick={onClick}>
       {children}
     </button>
   );
@@ -38,7 +66,7 @@ export function Button({
 
 // 渲染工作区左侧栏，保持 Figma 中的固定尺寸和项目文本。
 export function Sidebar({ go, creating = false }: Pick<PageProps, "go"> & { creating?: boolean; projectName?: string }) {
-  const { projects: savedProjects, project: activeProject, submission: activeSubmission, openProject, openSubmission, setNotice } = useWorkspace();
+  const { draftDirty, projects: savedProjects, project: activeProject, submission: activeSubmission, openProject, openSubmission, prefetchSubmission, refreshProjects, resetDraft, saveDraft, setNotice, syncProjectName, syncSubmissionTitle } = useWorkspace();
   const { profile } = useProfile();
   const sidebarRef = useRef<HTMLElement>(null);
   const [projectsExpanded, setProjectsExpanded] = useState(true);
@@ -48,7 +76,16 @@ export function Sidebar({ go, creating = false }: Pick<PageProps, "go"> & { crea
   const [versionProjectKey, setVersionProjectKey] = useState<string | null>(null);
   const [manageProjectKey, setManageProjectKey] = useState<string | null>(null);
   const [manageVersionId, setManageVersionId] = useState<number | null>(null);
-  const visibleProjects = projectGroups.slice(0, 12);
+  const [pinnedProjectIds, setPinnedProjectIds] = useState<number[]>(() => readPinnedProjectIds());
+  const [editingProjectKey, setEditingProjectKey] = useState<string | null>(null);
+  const [editingProjectName, setEditingProjectName] = useState("");
+  const [editingVersionId, setEditingVersionId] = useState<number | null>(null);
+  const [editingVersionName, setEditingVersionName] = useState("");
+  const [batchEditProjectKey, setBatchEditProjectKey] = useState<string | null>(null);
+  const [checkedVersionIds, setCheckedVersionIds] = useState<number[]>([]);
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
+  const [exitPromptOpen, setExitPromptOpen] = useState(false);
+  const visibleProjects = sortPinnedProjectGroups(projectGroups, pinnedProjectIds).slice(0, 12);
   const currentRoute = window.location.hash.replace("#/", "");
 
   useEffect(() => {
@@ -58,68 +95,273 @@ export function Sidebar({ go, creating = false }: Pick<PageProps, "go"> & { crea
     return () => { mounted = false; };
   }, [savedProjects]);
 
+  useEffect(() => {
+    visibleProjects.forEach((group) => {
+      const latest = getLatestVersion(group);
+      if (latest) prefetchSubmission(latest.submission.id, { project: latest.project, submission: latest.submission });
+    });
+  }, [prefetchSubmission, visibleProjects]);
+
   // 收起全部项目弹出卡片。
   const closeProjectMenus = () => {
-    setVersionProjectKey(null);
     setManageProjectKey(null);
     setManageVersionId(null);
   };
 
+  // 退出批量编辑版本状态。
+  const closeBatchEdit = () => {
+    setBatchEditProjectKey(null);
+    setCheckedVersionIds([]);
+  };
+
   useEffect(() => {
-    if (!versionProjectKey && !manageProjectKey && !manageVersionId) return;
+    if (!manageProjectKey && !manageVersionId) return;
     const closeOutside = (event: PointerEvent) => {
       const target = event.target as HTMLElement;
-      if (target.closest("[data-sidebar-popup]") || target.closest("[data-sidebar-trigger]")) return;
-      closeProjectMenus();
+      if (target.closest("[data-sidebar-menu]") || target.closest("[data-sidebar-menu-trigger]")) return;
+      setManageProjectKey(null);
+      setManageVersionId(null);
     };
     document.addEventListener("pointerdown", closeOutside);
     return () => document.removeEventListener("pointerdown", closeOutside);
-  }, [versionProjectKey, manageProjectKey, manageVersionId]);
+  }, [manageProjectKey, manageVersionId]);
+
+  useEffect(() => {
+    if (!batchEditProjectKey) return;
+    const closeOutside = (event: PointerEvent) => {
+      const target = event.target as HTMLElement;
+      if (target.closest("[data-sidebar-version-row]") || target.closest("[data-sidebar-batch-action]")) return;
+      closeBatchEdit();
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    return () => document.removeEventListener("pointerdown", closeOutside);
+  }, [batchEditProjectKey]);
+
+  useEffect(() => {
+    if (!accountOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      const target = event.target as HTMLElement;
+      if (target.closest("[data-account-menu]") || target.closest("[data-account-trigger]")) return;
+      setAccountOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    return () => document.removeEventListener("pointerdown", closeOutside);
+  }, [accountOpen]);
 
   // 打开项目的最近版本，并进入对应页面。
   const openLatestProject = async (group: ProjectGroup) => {
     closeProjectMenus();
     const latest = getLatestVersion(group);
     if (!latest) {
-      await openProject(group.latestProject.id);
-      go("confirm");
+      await openProject(group.latestProject.id, group.latestProject);
+      go("info");
       return;
     }
-    await openSubmission(latest.submission.id);
+    await openSubmission(latest.submission.id, { project: latest.project, submission: latest.submission });
     if (latest.submission.status === "evaluating") go("processing");
     else if (latest.history?.overall_score != null || latest.submission.status === "completed") go("report");
-    else go("confirm");
+    else go(readSubmissionRoute(latest.submission.id, "info"));
   };
 
   // 打开指定历史版本报告。
   const openVersion = async (version: ProjectVersion) => {
     closeProjectMenus();
-    await openSubmission(version.submission.id);
+    await openSubmission(version.submission.id, { project: version.project, submission: version.submission });
     if (version.submission.status === "evaluating") go("processing");
     else if (version.history?.overall_score != null || version.submission.status === "completed") go("report");
-    else go("confirm");
+    else go(readSubmissionRoute(version.submission.id, "info"));
   };
 
-  // 数据改写入口暂时只提示，避免未经确认修改数据库。
-  const showProtectedAction = (message: string) => {
+  // 显示操作结果，并关闭项目管理菜单。
+  const showActionMessage = (message: string) => {
     closeProjectMenus();
     setNotice(message);
-    window.alert(message);
+  };
+
+  // 置顶或取消置顶同名项目组。
+  const togglePinProject = (group: ProjectGroup) => {
+    const groupIds = group.projects.map((project) => project.id);
+    const pinned = isProjectGroupPinned(group, pinnedProjectIds);
+    const nextIds = pinned
+      ? pinnedProjectIds.filter((id) => !groupIds.includes(id))
+      : [...groupIds, ...pinnedProjectIds.filter((id) => !groupIds.includes(id))];
+    setPinnedProjectIds(nextIds);
+    writePinnedProjectIds(nextIds);
+    showActionMessage(pinned ? "已取消置顶。" : "项目已置顶。");
+  };
+
+  // 进入项目名称编辑状态。
+  const startRenameProject = (group: ProjectGroup) => {
+    closeProjectMenus();
+    setEditingProjectKey(group.key);
+    setEditingProjectName(group.name);
+  };
+
+  // 保存项目组新名称。
+  const commitRenameProject = async (group: ProjectGroup) => {
+    const name = editingProjectName.trim();
+    setEditingProjectKey(null);
+    if (!name || name === group.name) return;
+    const groupIds = group.projects.map((project) => project.id);
+    setProjectGroups((current) => current.map((item) => item.key === group.key ? { ...item, key: name, name } : item));
+    await Promise.all(group.projects.map((project) => updateProject(project.id, { name })));
+    syncProjectName(groupIds, name);
+    await refreshProjects();
+    showActionMessage("项目已重命名。");
+  };
+
+  // 删除项目组下全部同名项目。
+  const deleteProjectGroup = async (group: ProjectGroup) => {
+    closeProjectMenus();
+    setConfirmAction({
+      title: "删除项目",
+      message: `确定删除“${group.name}”及其全部版本吗？此操作不可恢复。`,
+      confirmText: "确认删除",
+      onConfirm: async () => {
+        const groupIds = group.projects.map((project) => project.id);
+        setProjectGroups((current) => current.filter((item) => item.key !== group.key));
+        await Promise.all(group.projects.map((project) => deleteProject(project.id)));
+        const nextPinnedIds = pinnedProjectIds.filter((id) => !groupIds.includes(id));
+        setPinnedProjectIds(nextPinnedIds);
+        writePinnedProjectIds(nextPinnedIds);
+        if (activeProject && groupIds.includes(activeProject.id)) {
+          resetDraft();
+          go("dashboard");
+        }
+        await refreshProjects();
+        showActionMessage("项目已删除。");
+      },
+    });
+  };
+
+  // 进入版本名称编辑状态。
+  const startRenameVersion = (version: ProjectVersion) => {
+    closeProjectMenus();
+    closeBatchEdit();
+    setEditingVersionId(version.submission.id);
+    setEditingVersionName(getVersionLabel(version));
+  };
+
+  // 保存版本新名称。
+  const commitRenameVersion = async (version: ProjectVersion) => {
+    const name = editingVersionName.trim();
+    setEditingVersionId(null);
+    if (!name || name === getVersionLabel(version)) return;
+    setProjectGroups((current) => current.map((group) => ({
+      ...group,
+      versions: group.versions.map((item) => item.submission.id === version.submission.id
+        ? { ...item, submission: { ...item.submission, title: name } }
+        : item),
+    })));
+    await updateSubmission(version.submission.id, { title: name });
+    syncSubmissionTitle(version.submission.id, name);
+    await refreshProjects();
+    showActionMessage("版本已重命名。");
+  };
+
+  // 删除单个版本。
+  const deleteVersion = async (version: ProjectVersion) => {
+    closeProjectMenus();
+    closeBatchEdit();
+    setConfirmAction({
+      title: "删除版本",
+      message: `确定删除“${getVersionLabel(version)}”吗？此操作不可恢复。`,
+      confirmText: "确认删除",
+      onConfirm: async () => {
+        setProjectGroups((current) => current.map((group) => ({
+          ...group,
+          versions: group.versions.filter((item) => item.submission.id !== version.submission.id),
+        })));
+        await deleteSubmission(version.submission.id);
+        if (activeSubmission?.id === version.submission.id) {
+          resetDraft();
+          go("dashboard");
+        }
+        await refreshProjects();
+        showActionMessage("版本已删除。");
+      },
+    });
+  };
+
+  // 进入版本批量编辑状态。
+  const startBatchEditVersions = (group: ProjectGroup) => {
+    closeProjectMenus();
+    setEditingVersionId(null);
+    setVersionProjectKey(group.key);
+    setBatchEditProjectKey(group.key);
+    setCheckedVersionIds([]);
+  };
+
+  // 勾选或取消勾选一个版本。
+  const toggleCheckedVersion = (submissionId: number) => {
+    setCheckedVersionIds((current) => current.includes(submissionId)
+      ? current.filter((id) => id !== submissionId)
+      : [...current, submissionId]);
+  };
+
+  // 批量删除已勾选的版本。
+  const deleteCheckedVersions = async (group: ProjectGroup) => {
+    const ids = checkedVersionIds;
+    if (!ids.length) return;
+    setConfirmAction({
+      title: "删除版本",
+      message: `确定删除选中的 ${ids.length} 个版本吗？此操作不可恢复。`,
+      confirmText: "确认删除",
+      onConfirm: async () => {
+        setProjectGroups((current) => current.map((item) => item.key === group.key
+          ? { ...item, versions: item.versions.filter((version) => !ids.includes(version.submission.id)) }
+          : item));
+        await Promise.all(ids.map((id) => deleteSubmission(id)));
+        if (activeSubmission && ids.includes(activeSubmission.id)) {
+          resetDraft();
+          go("dashboard");
+        }
+        closeBatchEdit();
+        await refreshProjects();
+        showActionMessage("已删除选中的版本。");
+      },
+    });
+  };
+
+  // 新建流程中返回首页：未保存时先提示用户选择保存或放弃。
+  const leaveCreateFlow = () => {
+    if (!creating) {
+      go("create");
+      return;
+    }
+    if (!draftDirty) {
+      go("dashboard");
+      return;
+    }
+    setExitPromptOpen(true);
+  };
+
+  const saveAndExit = async () => {
+    const savedSubmission = await saveDraft();
+    const currentRoute = window.location.hash.replace("#/", "") as Route;
+    rememberSubmissionRoute(savedSubmission.id, currentRoute);
+    setExitPromptOpen(false);
+    go("dashboard");
+  };
+
+  const discardAndExit = () => {
+    resetDraft();
+    setExitPromptOpen(false);
+    go("dashboard");
   };
 
   return (
     <>
     <aside ref={sidebarRef} className="font-chat sidebar-shadow panel absolute left-[23px] top-[11px] z-10 h-[796px] w-[248px] overflow-visible">
-      <div className="absolute left-[21px] top-[21px] flex h-8 w-8 items-center justify-center rounded-full bg-[#171719] text-[17px] font-bold text-white">A</div>
-      <b className="absolute left-[65px] top-[24px] text-[16px] leading-[22px]">ArchCritic</b>
-      <button className="absolute left-[21px] top-[75px] h-10 w-[204px] rounded-[16px] bg-[#171719] text-[13px] font-bold text-white" onClick={() => go("create")}>
-        {creating ? "新建评图中" : "+ 新建评图"}
+      <ArchCriticLogo />
+      <button className="sidebar-primary-text absolute left-[21px] top-[75px] h-10 w-[204px] rounded-[16px] bg-[#171719] font-bold text-white" onClick={leaveCreateFlow}>
+        {creating ? "返回首页" : "+ 新建评图"}
       </button>
-      <div className="sidebar-scroll absolute bottom-[76px] left-0 right-[7px] top-[125px] overflow-y-scroll pb-4">
-        <NavItem text="首页" icon="home" active={currentRoute === "dashboard" || currentRoute === "create"} onClick={() => go("dashboard")} />
+      <div className="sidebar-scroll absolute bottom-[76px] left-0 right-[7px] top-[125px] overflow-y-auto pb-4">
+        <NavItem text="首页" icon="home" active={currentRoute === "dashboard"} onClick={() => go("dashboard")} />
         <NavItem text="知识库" icon="library" />
-        <div className="group ml-[21px] mt-3 flex h-[38px] w-[204px] items-center">
-          <b className="ml-[14px] text-[13px] leading-[18px] text-[#171719]">我的项目</b>
+        <div className="group mb-2 ml-[21px] flex h-[38px] w-[204px] items-center">
+          <b className="sidebar-primary-text ml-[14px] font-bold text-[#171719]">我的项目</b>
           <button
             type="button"
             aria-label={projectsExpanded ? "收起项目列表" : "展开项目列表"}
@@ -132,29 +374,86 @@ export function Sidebar({ go, creating = false }: Pick<PageProps, "go"> & { crea
         {projectsExpanded && visibleProjects.map((group) => {
           const latest = getLatestVersion(group);
           const versions = [...group.versions].reverse();
-          const rowSelected = currentRoute !== "dashboard" && group.projects.some((project) => project.id === activeProject?.id);
+          const rowSelected = currentRoute !== "dashboard" && currentRoute !== "create" && group.projects.some((project) => project.id === activeProject?.id);
+          const pinned = isProjectGroupPinned(group, pinnedProjectIds);
+          const editingThisProject = editingProjectKey === group.key;
+          const batchEditingThisProject = batchEditProjectKey === group.key;
+          const checkedCount = batchEditingThisProject ? checkedVersionIds.length : 0;
           return (
-            <div className="relative ml-[21px] mt-2 w-[204px]" key={group.key}>
-              <div className={`group relative h-12 w-[204px] rounded-[14px] hover:bg-[#eef0f4] ${rowSelected ? "bg-[#eef0f4]" : "bg-transparent"}`}>
-                <button type="button" className="absolute inset-y-0 left-0 w-[142px] text-left" onClick={() => void openLatestProject(group)}>
-                  <span className={`absolute left-[14px] top-[8px] max-w-[118px] truncate text-[12px] leading-4 ${rowSelected ? "font-bold" : ""}`}>{group.name}</span>
-                  <span className="absolute left-[14px] top-[27px] text-[10px] leading-[13px] text-[#9a9ea7]">{formatSidebarDate(latest?.submission.created_at ?? group.latestProject.created_at)}</span>
-                </button>
+            <div className="relative ml-[21px] mt-2 w-[204px]" data-sidebar-item key={group.key}>
+              <div className={`group relative h-12 w-[204px] rounded-[14px] ${batchEditingThisProject ? "bg-transparent" : rowSelected ? "bg-[#eef0f4]" : "bg-transparent hover:bg-[#eef0f4]"}`}>
+                {editingThisProject ? (
+                  <div className="absolute inset-y-0 left-0 w-[142px] text-left">
+                    <input
+                      autoFocus
+                      className={`sidebar-project-name-text absolute left-[14px] top-[8px] h-4 w-[118px] truncate bg-transparent p-0 outline-none ${rowSelected ? "font-bold" : "font-normal"}`}
+                      value={editingProjectName}
+                      onClick={(event) => event.stopPropagation()}
+                      onFocus={(event) => {
+                        const input = event.currentTarget;
+                        requestAnimationFrame(() => input.setSelectionRange(input.value.length, input.value.length));
+                      }}
+                      onChange={(event) => setEditingProjectName(event.target.value)}
+                      onBlur={() => void commitRenameProject(group)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") void commitRenameProject(group);
+                        if (event.key === "Escape") setEditingProjectKey(null);
+                      }}
+                    />
+                    <span className="absolute left-[14px] top-[27px] text-[10px] leading-[13px] text-[#9a9ea7]">{formatSidebarDate(latest?.submission.created_at ?? group.latestProject.created_at)}</span>
+                  </div>
+                ) : (
+                  <button type="button" className="absolute inset-y-0 left-0 w-[142px] text-left" onClick={() => batchEditingThisProject ? closeBatchEdit() : void openLatestProject(group)}>
+                    <span className={`sidebar-project-name-text absolute left-[14px] top-[8px] max-w-[118px] truncate ${rowSelected ? "font-bold" : ""}`}>{group.name}</span>
+                    <span className="absolute left-[14px] top-[27px] text-[10px] leading-[13px] text-[#9a9ea7]">{formatSidebarDate(latest?.submission.created_at ?? group.latestProject.created_at)}</span>
+                  </button>
+                )}
+                {pinned && <PinMarkIcon className="absolute left-[1px] top-[10px]" />}
+                {batchEditingThisProject ? (
+                  checkedCount > 0 && (
+                    <button
+                      type="button"
+                      data-sidebar-batch-action
+                      className="sidebar-menu-text absolute right-0 top-[12px] flex h-6 items-center rounded-[8px] px-2 font-bold text-[#171719] hover:bg-[#eef0f4]"
+                      onClick={() => void deleteCheckedVersions(group)}
+                    >
+                      <SidebarMenuIconView icon="trash" />
+                      <span className="ml-[5px]">删除版本</span>
+                    </button>
+                  )
+                ) : (
+                  <button
+                    type="button"
+                    data-sidebar-trigger
+                    aria-label={`查看${group.name}版本`}
+                    className={`absolute right-[26px] top-[14px] flex h-5 w-5 items-center justify-center rounded-full transition-opacity ${versionProjectKey === group.key ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                    onClick={(event) => {
+                      const row = event.currentTarget.closest("[data-sidebar-item]") as HTMLElement | null;
+                      const willOpen = versionProjectKey !== group.key;
+                      closeBatchEdit();
+                      setManageProjectKey(null);
+                      setManageVersionId(null);
+                      setVersionProjectKey(willOpen ? group.key : null);
+                      if (willOpen) revealSidebarPopup(row);
+                    }}
+                  >
+                    <ChevronIcon direction={versionProjectKey === group.key ? "down" : "right"} className="h-3 w-3" />
+                  </button>
+                )}
                 <button
                   type="button"
-                  data-sidebar-trigger
-                  aria-label={`查看${group.name}版本`}
-                  className={`absolute right-[26px] top-[14px] flex h-5 w-5 items-center justify-center rounded-full transition-opacity ${versionProjectKey === group.key ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
-                  onClick={() => { setManageProjectKey(null); setManageVersionId(null); setVersionProjectKey((current) => current === group.key ? null : group.key); }}
-                >
-                  <ChevronIcon direction={versionProjectKey === group.key ? "down" : "right"} className="h-3 w-3" />
-                </button>
-                <button
-                  type="button"
-                  data-sidebar-trigger
+                  data-sidebar-menu-trigger
                   aria-label={`管理${group.name}`}
-                  className={`absolute right-0 top-[12px] flex h-6 w-6 items-center justify-center rounded-full transition-opacity hover:bg-white ${manageProjectKey === group.key ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
-                  onClick={() => { setVersionProjectKey(null); setManageVersionId(null); setManageProjectKey((current) => current === group.key ? null : group.key); }}
+                  className={`absolute right-0 top-[12px] h-6 w-6 items-center justify-center rounded-full transition-opacity hover:bg-white ${batchEditingThisProject ? "hidden" : "flex"} ${manageProjectKey === group.key ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                  onClick={(event) => {
+                    const row = event.currentTarget.closest("[data-sidebar-item]") as HTMLElement | null;
+                    const willOpen = manageProjectKey !== group.key;
+                    closeBatchEdit();
+                    setVersionProjectKey(null);
+                    setManageVersionId(null);
+                    setManageProjectKey(willOpen ? group.key : null);
+                    if (willOpen) revealSidebarPopup(row);
+                  }}
                 >
                   <DotsIcon />
                 </button>
@@ -166,23 +465,55 @@ export function Sidebar({ go, creating = false }: Pick<PageProps, "go"> & { crea
                   manageVersionId={manageVersionId}
                   onOpenVersion={(version) => void openVersion(version)}
                   onManageVersion={(submissionId) => setManageVersionId((current) => current === submissionId ? null : submissionId)}
-                  onProtectedAction={showProtectedAction}
+                  editingVersionId={editingVersionId}
+                  editingVersionName={editingVersionName}
+                  onEditingVersionName={setEditingVersionName}
+                  onRenameVersion={startRenameVersion}
+                  onCommitRenameVersion={(version) => void commitRenameVersion(version)}
+                  onCancelRenameVersion={() => setEditingVersionId(null)}
+                  onDeleteVersion={(version) => void deleteVersion(version)}
+                  batchEditing={batchEditingThisProject}
+                  checkedVersionIds={checkedVersionIds}
+                  onToggleCheckedVersion={toggleCheckedVersion}
+                  onStartBatchEdit={() => startBatchEditVersions(group)}
                 />
               )}
-              {manageProjectKey === group.key && <ProjectManageMenu onProtectedAction={showProtectedAction} />}
+              {manageProjectKey === group.key && (
+                <ProjectManageMenu
+                  pinned={pinned}
+                  onTogglePin={() => togglePinProject(group)}
+                  onRename={() => startRenameProject(group)}
+                  onDelete={() => void deleteProjectGroup(group)}
+                />
+              )}
             </div>
           );
         })}
       </div>
-      {accountOpen && <AccountMenu profile={profile} onEditProfile={() => { setAccountOpen(false); setProfileEditing(true); }} />}
-      <button type="button" className="absolute bottom-[12px] left-[21px] h-[52px] w-[204px] rounded-[16px] border border-[#e8ebef] bg-white/75 text-left" onClick={() => setAccountOpen((current) => !current)}>
+      {accountOpen && <AccountMenu onEditProfile={() => { setAccountOpen(false); setProfileEditing(true); }} />}
+      <button type="button" data-account-trigger className="absolute bottom-[12px] left-[21px] h-[52px] w-[204px] rounded-[16px] border border-[#e8ebef] bg-white/75 text-left" onClick={() => setAccountOpen((current) => !current)}>
         <ProfileAvatar profile={profile} className="absolute left-[11px] top-[11px] h-7 w-7 text-[13px]" />
-        <b className="absolute left-[51px] top-[9px] text-[12px] leading-4">{profile.displayName}</b>
+        <b className="sidebar-primary-text absolute left-[51px] top-[7px] font-bold">{profile.displayName}</b>
         <span className="absolute left-[51px] top-[27px] text-[10px] leading-[13px] text-[#9a9ea7]">Plus</span>
       </button>
     </aside>
     {profileEditing && <ProfileModal profile={profile} onClose={() => setProfileEditing(false)} />}
+    {confirmAction && <ConfirmCard action={confirmAction} onClose={() => setConfirmAction(null)} />}
+    {exitPromptOpen && <DraftExitCard onClose={() => setExitPromptOpen(false)} onSave={saveAndExit} onDiscard={discardAndExit} />}
     </>
+  );
+}
+
+// 渲染左上角品牌字标。
+function ArchCriticLogo() {
+  return (
+    <div className="absolute left-[21px] top-[22px] flex h-[30px] w-[150px] items-center bg-white">
+      <img
+        alt="ArchCritic"
+        className="h-[30px] w-[150px] object-cover object-center"
+        src="/assets/v1/archcritic-logo.png"
+      />
+    </div>
   );
 }
 
@@ -196,7 +527,7 @@ function NavItem({ text, icon, active, onClick }: { text: string; icon: "home" |
       <span className={`absolute left-[12px] top-[10px] ${active ? "text-[#6c4dff]" : "text-[#9a9ea7]"}`}>
         {icon === "home" ? <HomeIcon /> : <LibraryIcon />}
       </span>
-      <span className="absolute left-[34px] top-[9px] text-[13px] leading-[18px]">{text}</span>
+      <span className={`sidebar-primary-text absolute left-[34px] top-[8px] ${active ? "font-bold" : "font-medium"}`}>{text}</span>
     </button>
   );
 }
@@ -207,33 +538,105 @@ function formatSidebarDate(date?: string | null) {
 }
 
 // 渲染项目右侧三点菜单。
-function ProjectManageMenu({ onProtectedAction }: { onProtectedAction: (message: string) => void }) {
+function ProjectManageMenu({ pinned, onTogglePin, onRename, onDelete }: { pinned: boolean; onTogglePin: () => void; onRename: () => void; onDelete: () => void }) {
   return (
-    <section data-sidebar-popup className="figma-shadow relative z-30 ml-auto mt-1 w-[132px] rounded-[10px] border border-[#e8ebef] bg-white p-1">
-      <SidebarMenuItem icon="pin" text="置顶项目" onClick={() => onProtectedAction("置顶项目将在项目排序功能接入后启用。")} />
-      <SidebarMenuItem icon="edit" text="重命名" onClick={() => onProtectedAction("重命名涉及项目资料写入，请确认后再接入。")} />
-      <SidebarMenuItem icon="trash" text="删除项目" danger onClick={() => onProtectedAction("删除项目涉及数据库删除，请确认后再接入。")} />
+    <section data-sidebar-popup data-sidebar-menu className="figma-shadow relative z-30 ml-auto mt-1 w-[116px] rounded-[10px] border border-[#e8ebef] bg-white p-1">
+      <SidebarMenuItem icon="pin" text={pinned ? "取消置顶" : "置顶项目"} onClick={onTogglePin} />
+      <SidebarMenuItem icon="edit" text="重命名" onClick={onRename} />
+      <SidebarMenuItem icon="trash" text="删除项目" danger onClick={onDelete} />
     </section>
   );
 }
 
 // 渲染项目版本列表，点击版本可进入对应报告。
-function ProjectVersionMenu({ versions, activeSubmissionId, manageVersionId, onOpenVersion, onManageVersion, onProtectedAction }: { versions: ProjectVersion[]; activeSubmissionId?: number; manageVersionId: number | null; onOpenVersion: (version: ProjectVersion) => void; onManageVersion: (submissionId: number) => void; onProtectedAction: (message: string) => void }) {
+function ProjectVersionMenu({
+  versions,
+  activeSubmissionId,
+  manageVersionId,
+  editingVersionId,
+  editingVersionName,
+  onEditingVersionName,
+  onOpenVersion,
+  onManageVersion,
+  onRenameVersion,
+  onCommitRenameVersion,
+  onCancelRenameVersion,
+  onDeleteVersion,
+  batchEditing,
+  checkedVersionIds,
+  onToggleCheckedVersion,
+  onStartBatchEdit,
+}: {
+  versions: ProjectVersion[];
+  activeSubmissionId?: number;
+  manageVersionId: number | null;
+  editingVersionId: number | null;
+  editingVersionName: string;
+  onEditingVersionName: (name: string) => void;
+  onOpenVersion: (version: ProjectVersion) => void;
+  onManageVersion: (submissionId: number) => void;
+  onRenameVersion: (version: ProjectVersion) => void;
+  onCommitRenameVersion: (version: ProjectVersion) => void;
+  onCancelRenameVersion: () => void;
+  onDeleteVersion: (version: ProjectVersion) => void;
+  batchEditing: boolean;
+  checkedVersionIds: number[];
+  onToggleCheckedVersion: (submissionId: number) => void;
+  onStartBatchEdit: () => void;
+}) {
   if (!versions.length) return <section data-sidebar-popup className="relative z-30 mt-1 px-[14px] py-2 text-[11px] text-[#9a9ea7]">暂无历史版本</section>;
   return (
-    <section data-sidebar-popup className="relative z-30 mt-1 w-[204px]">
+    <section data-sidebar-popup data-sidebar-version-list className="relative z-30 mt-1 w-[204px]">
       {versions.map((version) => {
+        const editingThisVersion = editingVersionId === version.submission.id;
+        const checked = checkedVersionIds.includes(version.submission.id);
+        const mutedForBatch = batchEditing && !checked;
         return (
-          <div className="group relative" key={version.submission.id}>
-            <button type="button" className={`flex h-8 w-full items-center rounded-[8px] px-[14px] text-left text-[11px] hover:bg-[#eef0f4] ${version.submission.id === activeSubmissionId ? "font-bold" : ""}`} onClick={() => onOpenVersion(version)}>
-              <span>V{version.versionNumber}</span>
-              <span className="ml-3 text-[10px] font-medium text-[#9ca3af]">{version.history?.overall_score == null ? "草稿" : `${Math.round(version.history.overall_score)}分`}</span>
-            </button>
-            <button type="button" data-sidebar-trigger aria-label={`管理V${version.versionNumber}`} className="absolute right-0 top-1 flex h-6 w-6 items-center justify-center rounded-full opacity-0 hover:bg-white group-hover:opacity-100" onClick={() => onManageVersion(version.submission.id)}><DotsIcon /></button>
+          <div className="group relative" data-sidebar-version-row key={version.submission.id}>
+            {editingThisVersion ? (
+              <div className="grid h-8 w-full grid-cols-[minmax(0,1fr)_42px] items-center gap-2 rounded-[8px] px-[14px] pr-8 text-left">
+                <input
+                  autoFocus
+                  className="sidebar-version-name-text min-w-0 truncate bg-transparent p-0 outline-none"
+                  value={editingVersionName}
+                  onFocus={(event) => {
+                    const input = event.currentTarget;
+                    requestAnimationFrame(() => input.setSelectionRange(input.value.length, input.value.length));
+                  }}
+                  onChange={(event) => onEditingVersionName(event.target.value)}
+                  onBlur={() => onCommitRenameVersion(version)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") onCommitRenameVersion(version);
+                    if (event.key === "Escape") onCancelRenameVersion();
+                  }}
+                />
+                <span className="text-right text-[11px] font-semibold leading-4 text-[#9ca3af]">{version.history?.overall_score == null ? "草稿" : `${Math.round(version.history.overall_score)}分`}</span>
+              </div>
+            ) : (
+              <button type="button" className={`grid h-8 w-full items-center gap-2 rounded-[8px] px-[14px] text-left transition-opacity hover:bg-[#eef0f4] ${batchEditing ? "grid-cols-[minmax(0,1fr)_42px_18px] pr-2" : "grid-cols-[minmax(0,1fr)_42px] pr-8"} ${mutedForBatch ? "opacity-45" : "opacity-100"} ${version.submission.id === activeSubmissionId ? "font-bold" : ""}`} onClick={() => batchEditing ? onToggleCheckedVersion(version.submission.id) : onOpenVersion(version)}>
+                <span className="sidebar-version-name-text truncate">{getVersionLabel(version)}</span>
+                <span className="text-right text-[11px] font-semibold leading-4 text-[#9ca3af]">{version.history?.overall_score == null ? "草稿" : `${Math.round(version.history.overall_score)}分`}</span>
+                {batchEditing && <VersionCheckBox checked={checked} />}
+              </button>
+            )}
+            {!batchEditing && <button
+              type="button"
+              data-sidebar-menu-trigger
+              aria-label={`管理${getVersionLabel(version)}`}
+              className="absolute right-0 top-1 flex h-6 w-6 items-center justify-center rounded-full opacity-0 hover:bg-white group-hover:opacity-100"
+              onClick={(event) => {
+                const row = event.currentTarget.closest("[data-sidebar-version-row]") as HTMLElement | null;
+                onManageVersion(version.submission.id);
+                revealSidebarPopup(row);
+              }}
+            >
+              <DotsIcon />
+            </button>}
             {manageVersionId === version.submission.id && (
-              <section data-sidebar-popup className="figma-shadow relative z-40 ml-auto mt-1 w-[132px] rounded-[10px] border border-[#e8ebef] bg-white p-1">
-                <SidebarMenuItem icon="edit" text="重命名版本" onClick={() => onProtectedAction("重命名版本涉及提交资料写入，请确认后再接入。")} />
-                <SidebarMenuItem icon="trash" text="删除版本" danger onClick={() => onProtectedAction("删除版本涉及数据库删除，请确认后再接入。")} />
+              <section data-sidebar-popup data-sidebar-menu className="figma-shadow relative z-40 ml-auto mt-1 w-[96px] rounded-[10px] border border-[#e8ebef] bg-white p-1">
+                <SidebarMenuItem icon="edit" text="重命名" onClick={() => onRenameVersion(version)} />
+                <SidebarMenuItem icon="batchEdit" text="批量编辑" onClick={onStartBatchEdit} />
+                <SidebarMenuItem icon="trash" text="删除版本" danger onClick={() => onDeleteVersion(version)} />
               </section>
             )}
           </div>
@@ -243,18 +646,28 @@ function ProjectVersionMenu({ versions, activeSubmissionId, manageVersionId, onO
   );
 }
 
-type SidebarMenuIcon = "pin" | "edit" | "trash";
+// 渲染批量编辑时的勾选框。
+function VersionCheckBox({ checked }: { checked: boolean }) {
+  return (
+    <span className={`flex h-[14px] w-[14px] items-center justify-center rounded-[3px] border ${checked ? "border-[#171719] bg-[#171719]" : "border-[#9a9ea7] bg-white"}`}>
+      {checked && <span className="h-[5px] w-[8px] -rotate-45 border-b-2 border-l-2 border-white" />}
+    </span>
+  );
+}
+
+type SidebarMenuIcon = "pin" | "edit" | "batchEdit" | "trash";
 
 // 渲染侧栏管理菜单中的一行。
 function SidebarMenuItem({ icon, text, danger = false, onClick }: { icon: SidebarMenuIcon; text: string; danger?: boolean; onClick: () => void }) {
-  return <button type="button" className={`flex h-8 w-full items-center rounded-[8px] px-2 text-left text-[12px] hover:bg-[#f7f8fa] ${danger ? "text-[#dc2626]" : "text-[#111318]"}`} onClick={onClick}><SidebarMenuIconView icon={icon} /><span className="ml-2">{text}</span></button>;
+  return <button type="button" className={`sidebar-menu-text flex h-7 w-full items-center rounded-[8px] px-2 text-left hover:bg-[#f7f8fa] ${danger ? "text-[#dc2626]" : "text-[#111318]"}`} onClick={onClick}><SidebarMenuIconView icon={icon} /><span className="ml-[7px] min-w-0 flex-1 whitespace-nowrap">{text}</span></button>;
 }
 
 // 渲染项目菜单图标。
 function SidebarMenuIconView({ icon }: { icon: SidebarMenuIcon }) {
-  if (icon === "pin") return <span className="relative h-5 w-5"><span className="absolute left-1 top-1 h-[7px] w-[10px] rounded-[2px] bg-current" /><span className="absolute left-[8px] top-[10px] h-[10px] w-0.5 rounded-full bg-current" /></span>;
-  if (icon === "edit") return <span className="h-[3px] w-4 rotate-[25deg] rounded-full bg-current" />;
-  return <span className="relative h-5 w-5"><span className="absolute left-1 top-[7px] h-3 w-3 rounded-[2px] border-[1.5px] border-current" /><span className="absolute left-1 top-[3px] h-0.5 w-3 rounded-full bg-current" /></span>;
+  if (icon === "pin") return <span className="relative inline-flex h-4 w-4 flex-none items-center justify-center"><span className="absolute left-[3px] top-[3px] h-[6px] w-[9px] rounded-[2px] bg-current" /><span className="absolute left-[7px] top-[8px] h-[8px] w-0.5 rounded-full bg-current" /></span>;
+  if (icon === "edit") return <span className="inline-flex h-4 w-4 flex-none items-center justify-center"><span className="h-[3px] w-[14px] rotate-[25deg] rounded-full bg-current" /></span>;
+  if (icon === "batchEdit") return <span className="inline-flex h-4 w-4 flex-none items-center justify-center"><svg viewBox="0 0 20 20" className="h-4 w-4 fill-none stroke-current stroke-[2]"><path d="M5 14.5 6 11l7.4-7.4a1.4 1.4 0 0 1 2 0l1 1a1.4 1.4 0 0 1 0 2L9 14l-3.6 1z" /><path d="m12.3 4.7 3 3" /></svg></span>;
+  return <span className="relative inline-flex h-4 w-4 flex-none items-center justify-center"><span className="absolute left-[3px] top-[6px] h-[10px] w-[10px] rounded-[2px] border-[1.5px] border-current" /><span className="absolute left-[3px] top-[2px] h-0.5 w-[10px] rounded-full bg-current" /></span>;
 }
 
 // 渲染项目操作入口中的三点按钮。
@@ -262,16 +675,102 @@ function DotsIcon() {
   return <span className="flex gap-[3px]">{[0, 1, 2].map((item) => <span className="h-[3px] w-[3px] rounded-full bg-[#6b7280]" key={item} />)}</span>;
 }
 
-// 渲染账号按钮打开的菜单。
-function AccountMenu({ profile, onEditProfile }: { profile: UserProfile; onEditProfile: () => void }) {
+// 渲染项目已置顶标记。
+function PinMarkIcon({ className = "" }: { className?: string }) {
   return (
-    <section className="figma-shadow absolute bottom-[72px] left-[13px] z-30 w-[222px] rounded-[20px] border border-[#e8ebef] bg-white p-3">
-      <div className="flex h-[54px] items-center border-b border-[#e8ebef] px-1 pb-3">
-        <ProfileAvatar profile={profile} className="h-9 w-9 text-[13px]" />
-        <div className="ml-3"><b className="block text-[14px]">{profile.displayName}</b><span className="text-[12px] text-[#9a9ea7]">Plus</span></div>
-        <ChevronIcon direction="right" className="ml-auto" />
-      </div>
-      <div className="space-y-1 py-2">
+    <span className={`text-[#6b7280] ${className}`}>
+      <svg viewBox="0 0 18 18" className="h-3 w-3 fill-current">
+        <path d="M5 2h8v2l-2 1.8V9l2 2v1H9.8V16H8.2v-4H4v-1l2-2V5.8L4 4V2h1z" />
+      </svg>
+    </span>
+  );
+}
+
+// 渲染项目或版本删除确认卡片，不使用浏览器系统弹窗。
+function ConfirmCard({ action, onClose }: { action: ConfirmAction; onClose: () => void }) {
+  const [submitting, setSubmitting] = useState(false);
+
+  // 确认后执行真实删除，并关闭卡片。
+  const confirm = async () => {
+    setSubmitting(true);
+    try {
+      await action.onConfirm();
+      onClose();
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="absolute inset-0 z-[70] bg-white/70 backdrop-blur-[2px]" onClick={onClose} />
+      <section className="figma-shadow font-chat absolute left-[472px] top-[270px] z-[80] h-[226px] w-[592px] rounded-[20px] border border-[#d9dde3] bg-white p-7">
+        <h2 className="text-[24px] font-medium leading-8">{action.title}</h2>
+        <p className="mt-6 text-[16px] leading-6 text-[#171719]">{action.message}</p>
+        <p className="mt-4 text-[14px] leading-5 text-[#9a9ea7]">删除后，该项目或版本的历史记录将无法恢复。</p>
+        <div className="absolute bottom-6 right-7 flex gap-4">
+          <button type="button" className="h-11 w-[92px] rounded-[22px] border border-[#d9dde3] bg-white text-[15px] font-medium text-[#171719]" onClick={onClose}>取消</button>
+          <button type="button" disabled={submitting} className="h-11 w-[126px] rounded-[22px] bg-[#171719] text-[15px] font-medium text-white disabled:opacity-60" onClick={() => void confirm()}>{submitting ? "删除中" : action.confirmText}</button>
+        </div>
+      </section>
+    </>
+  );
+}
+
+// 渲染新建流程未保存时的返回首页提示。
+function DraftExitCard({ onClose, onSave, onDiscard }: { onClose: () => void; onSave: () => Promise<void> | void; onDiscard: () => void }) {
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  // 保存失败时把原因显示出来，避免页面静默停住。
+  const save = async () => {
+    setSubmitting(true);
+    setError("");
+    try {
+      await onSave();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "草稿保存失败，请稍后重试。");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="absolute inset-0 z-[70] bg-[#171719]/30" onClick={onClose} />
+      <section className="figma-shadow font-chat absolute left-[472px] top-[270px] z-[80] h-[238px] w-[592px] rounded-[20px] border border-[#d9dde3] bg-white p-7">
+        <h2 className="text-[24px] font-bold leading-8">草稿尚未保存</h2>
+        <p className="mt-6 text-[16px] leading-6 text-[#171719]">当前新建评图还没有保存草稿。返回首页前，可以先保存当前填写内容。</p>
+        {error && <p className="mt-4 text-[13px] font-bold leading-5 text-[#ef4444]">{error}</p>}
+        <div className="absolute bottom-6 right-7 flex gap-4">
+          <button type="button" disabled={submitting} className="app-action-button h-10 w-[82px] rounded-[12px] border border-[#d9dde3] bg-white text-[#171719] disabled:opacity-60" onClick={onClose}>取消</button>
+          <button type="button" disabled={submitting} className="app-action-button h-10 w-[112px] rounded-[12px] border border-[#d9dde3] bg-white text-[#171719] disabled:opacity-60" onClick={onDiscard}>不保存</button>
+          <button type="button" disabled={submitting} className="app-action-button h-10 w-[124px] rounded-[12px] bg-[#6c4dff] text-white disabled:opacity-60" onClick={() => void save()}>{submitting ? "保存中" : "保存并退出"}</button>
+        </div>
+      </section>
+    </>
+  );
+}
+
+// 渲染流程操作失败提示卡片。
+export function FlowErrorCard({ title = "操作未完成", message, onClose }: { title?: string; message: string; onClose: () => void }) {
+  return (
+    <>
+      <div className="absolute inset-0 z-[70] bg-[#171719]/30" onClick={onClose} />
+      <section className="figma-shadow font-chat absolute left-[472px] top-[282px] z-[80] h-[198px] w-[592px] rounded-[20px] border border-[#d9dde3] bg-white p-7">
+        <h2 className="text-[24px] font-bold leading-8">{title}</h2>
+        <p className="mt-6 text-[16px] leading-6 text-[#171719]">{message}</p>
+        <button type="button" className="app-action-button absolute bottom-6 right-7 h-10 w-[96px] rounded-[12px] bg-[#171719] text-white" onClick={onClose}>知道了</button>
+      </section>
+    </>
+  );
+}
+
+// 渲染账号按钮打开的菜单。
+function AccountMenu({ onEditProfile }: { onEditProfile: () => void }) {
+  return (
+    <section data-account-menu className="figma-shadow absolute bottom-[72px] left-[21px] z-30 w-[204px] rounded-[20px] border border-[#e8ebef] bg-white p-3">
+      <div className="space-y-1 pb-2">
         <AccountMenuItem icon="sparkle" text="升级套餐" />
         <AccountMenuItem icon="profile" text="个人资料" onClick={onEditProfile} />
         <AccountMenuItem icon="settings" text="设置" />
@@ -343,7 +842,9 @@ function ProfileModal({ profile, onClose }: { profile: UserProfile; onClose: () 
         <h2 className="text-[22px] font-bold">个人资料</h2>
         <button type="button" className="absolute right-6 top-6 flex h-7 w-7 items-center justify-center rounded-full border border-[#e8ebef] text-[18px] text-[#9a9ea7]" onClick={onClose}>×</button>
         <div className="absolute left-[252px] top-[68px]">
-          <ProfileAvatar profile={{ ...profile, avatarDataUrl }} className="h-20 w-20 text-[24px]" />
+          <button type="button" aria-label="更换用户头像" className="block h-20 w-20 rounded-full" onClick={() => avatarInput.current?.click()}>
+            <ProfileAvatar profile={{ ...profile, avatarDataUrl }} className="h-20 w-20 text-[24px]" />
+          </button>
           <button type="button" aria-label="更换用户头像" className="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full border border-[#e8ebef] bg-white text-[#53565e]" onClick={() => avatarInput.current?.click()}>
             <CameraIcon />
           </button>
@@ -447,7 +948,7 @@ function MenuIcon({ name }: { name: MenuIconName }) {
   const paths = {
     sparkle: <path d="M12 2l2.2 6.2L20 10l-5.8 1.8L12 18l-2.2-6.2L4 10l5.8-1.8L12 2z" />,
     profile: <><circle cx="12" cy="8" r="3" /><path d="M5 19c1.2-3.4 3.5-5 7-5s5.8 1.6 7 5" /></>,
-    settings: <><circle cx="12" cy="12" r="3" /><path d="M12 3v2m0 14v2m9-9h-2M5 12H3m15.4-6.4L17 7m-10 10-1.4 1.4m12.8 0L17 17M7 7 5.6 5.6" /></>,
+    settings: <><path d="M9.67 4.14a2.34 2.34 0 014.66 0 2.34 2.34 0 003.32 1.91 2.34 2.34 0 012.33 4.03 2.34 2.34 0 000 3.84 2.34 2.34 0 01-2.33 4.03 2.34 2.34 0 00-3.32 1.91 2.34 2.34 0 01-4.66 0 2.34 2.34 0 00-3.32-1.91 2.34 2.34 0 01-2.33-4.03 2.34 2.34 0 000-3.84 2.34 2.34 0 012.33-4.03 2.34 2.34 0 003.32-1.91Z" /><circle cx="12" cy="12" r="3" /></>,
     help: <><circle cx="12" cy="12" r="8" /><path d="M9.8 9a2.3 2.3 0 014.4.8c0 1.8-2.2 2.1-2.2 3.7M12 17h.01" /></>,
     logout: <><path d="M10 5H5v14h5" /><path d="M14 8l4 4-4 4m4-4H9" /></>,
   };
@@ -475,7 +976,7 @@ export function PageTitle({ title, subtitle }: { title: string; subtitle: string
   return (
     <>
       <h1 className="absolute left-[307px] top-[53px] text-[34px] font-bold leading-[44px]">{title}</h1>
-      <p className="absolute left-[309px] top-[107px] text-[14px] leading-[22px] text-[#53565e]">{subtitle}</p>
+      <p className="absolute left-[307px] top-[107px] text-[14px] leading-[22px] text-[#53565e]">{subtitle}</p>
     </>
   );
 }
@@ -500,17 +1001,46 @@ export function Steps({ current, order = "default" }: { current: 1 | 2 | 3 | 4; 
 }
 
 // 渲染页面右上角流程按钮。
-export function FlowActions({ go, previous, next, finalText = "下一步", onSave, beforeNext }: { go: (route: Route) => void; previous?: Route; next: Route; finalText?: string; onSave?: () => void; beforeNext?: () => Promise<unknown> | void }) {
+export function FlowActions({ go, previous, next, finalText = "下一步", onSave, beforeNext }: { go: (route: Route) => void; previous?: Route; next: Route; finalText?: string; onSave?: () => Promise<unknown> | void; beforeNext?: () => Promise<unknown> | void }) {
+  const [activeAction, setActiveAction] = useState<"save" | "next" | null>(null);
+  const [error, setError] = useState("");
+  const submitting = activeAction !== null;
+
+  // 单独保存草稿时停留在当前页面，并等待后端保存完成。
+  const saveOnly = async () => {
+    if (!onSave) return;
+    setActiveAction("save");
+    setError("");
+    try {
+      await onSave();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "草稿保存失败，请稍后重试。");
+    } finally {
+      setActiveAction(null);
+    }
+  };
+
   const nextPage = async () => {
-    await beforeNext?.();
-    go(next);
+    setActiveAction("next");
+    setError("");
+    try {
+      await beforeNext?.();
+      go(next);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "草稿保存失败，请稍后重试。");
+    } finally {
+      setActiveAction(null);
+    }
   };
   return (
-    <div className="absolute right-[66px] top-[154px] flex gap-4">
-      {previous && <Button kind="white" onClick={() => go(previous)} className="w-[112px] text-[#9a9ea7]">上一步</Button>}
-      <Button kind="white" className="w-[122px]" onClick={onSave}>保存草稿</Button>
-      <Button kind="purple" onClick={() => void nextPage()} className="w-[123px] rounded-[16px]">{finalText}</Button>
-    </div>
+    <>
+      <div className="absolute right-[23px] top-[154px] flex gap-4">
+        {previous && <Button kind="white" disabled={submitting} onClick={() => go(previous)} className="report-top-action-button w-[112px] text-[#9a9ea7]">上一步</Button>}
+        <Button kind="white" disabled={submitting || !onSave} className="report-top-action-button w-[122px]" onClick={() => void saveOnly()}>{activeAction === "save" ? "保存中" : "保存草稿"}</Button>
+        <Button kind="purple" disabled={submitting} onClick={() => void nextPage()} className="report-top-action-button w-[123px] rounded-[16px]">{activeAction === "next" ? "保存中" : finalText}</Button>
+      </div>
+      {error && <FlowErrorCard message={error} onClose={() => setError("")} />}
+    </>
   );
 }
 

@@ -41,3 +41,42 @@ async def test_create_and_list_projects():
 
     assert history_response.status_code == 200
     assert history_response.json() == []
+
+
+@pytest.mark.asyncio
+async def test_delete_project_removes_related_submissions():
+    """确认删除项目会同时删除该项目下的提交版本。"""
+    init_db()
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        project_response = await client.post(
+            "/api/projects",
+            json={
+                "name": "待删除项目",
+                "building_type": "公共建筑",
+                "owner_name": "测试用户",
+                "grade": "大三建筑学",
+            },
+        )
+        project_id = project_response.json()["id"]
+        submission_response = await client.post(
+            "/api/submissions",
+            json={
+                "project_id": project_id,
+                "title": "V1",
+                "design_stage": "方案阶段",
+                "description": "用于测试项目删除。",
+            },
+        )
+        submission_id = submission_response.json()["id"]
+
+        delete_response = await client.delete(f"/api/projects/{project_id}")
+        project_after_delete = await client.get(f"/api/projects/{project_id}")
+        submission_after_delete = await client.get(f"/api/submissions/{submission_id}")
+
+    assert delete_response.status_code == 200
+    assert delete_response.json()["deleted"] == [project_id]
+    assert delete_response.json()["submissions"] == [submission_id]
+    assert project_after_delete.status_code == 404
+    assert submission_after_delete.status_code == 404

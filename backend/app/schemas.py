@@ -48,7 +48,7 @@ class SubmissionCreate(BaseModel):
     project_id: int
     title: str = Field(..., min_length=1, max_length=200)
     design_stage: str = Field(..., min_length=1, max_length=50)
-    description: str = Field(..., min_length=1)
+    description: str = Field(default="")
     image_urls: list[str] = Field(default_factory=list)
     status: str = Field(default="draft", max_length=30)
     enabled_agents: list[str] = Field(default_factory=list)
@@ -61,7 +61,7 @@ class SubmissionUpdate(BaseModel):
 
     title: str | None = Field(default=None, min_length=1, max_length=200)
     design_stage: str | None = Field(default=None, min_length=1, max_length=50)
-    description: str | None = Field(default=None, min_length=1)
+    description: str | None = None
     image_urls: list[str] | None = None
     status: str | None = Field(default=None, max_length=30)
     enabled_agents: list[str] | None = None
@@ -137,6 +137,8 @@ class ChatMessageCreate(BaseModel):
     """提交报告追问时使用的数据结构。"""
 
     content: str = Field(..., min_length=1, max_length=1000)
+    model_provider: str | None = Field(default=None, max_length=50)
+    model_name: str | None = Field(default=None, max_length=100)
 
 
 class ChatMessageRead(BaseModel):

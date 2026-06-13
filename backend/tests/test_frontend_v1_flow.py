@@ -53,6 +53,10 @@ async def test_frontend_v1_complete_api_flow(tmp_path, monkeypatch):
             f"/api/files/{drawing['id']}",
             json={"drawing_type": "analysis", "description": "基地交通分析图"},
         )
+        floor_plan_response = await client.patch(
+            f"/api/files/{drawing['id']}",
+            json={"drawing_type": "plan-2"},
+        )
         attachment_response = await client.post(
             f"/api/submissions/{submission_id}/attachments",
             files={"file": ("taskbook.pdf", b"pdf-bytes", "application/pdf")},
@@ -101,6 +105,7 @@ async def test_frontend_v1_complete_api_flow(tmp_path, monkeypatch):
     assert submission_response.status_code == 201
     assert upload_response.status_code == 201
     assert patch_response.json()["description"] == "基地交通分析图"
+    assert floor_plan_response.json()["drawing_type"] == "plan-2"
     assert attachment_response.status_code == 201
     assert report_response.status_code == 200
     assert export_response.status_code == 200

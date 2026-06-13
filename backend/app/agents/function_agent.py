@@ -24,6 +24,14 @@ SUB_SCORE_LIMITS = {
 DRAWING_PURPOSES = {
     "site": "场地入口、外部流线和建筑与环境关系",
     "plan": "功能房间、分区组织和主要流线",
+    "plan-2": "二层功能房间、分区组织和竖向流线",
+    "plan-3": "三层功能房间、分区组织和竖向流线",
+    "plan-4": "四层功能房间、分区组织和竖向流线",
+    "plan-5": "五层功能房间、分区组织和竖向流线",
+    "plan-6": "六层功能房间、分区组织和竖向流线",
+    "plan-7": "七层功能房间、分区组织和竖向流线",
+    "section": "剖面关系、层高、空间连通和竖向组织",
+    "elevation": "立面表达、开窗秩序和外部形象",
     "analysis": "设计者表达的功能、流线或场地分析逻辑",
     "render": "空间意向和公共空间体验，只作辅助判断",
 }
@@ -42,7 +50,8 @@ def build_function_agent_context(
         file_size = get_upload_file_size(item.file_url)
         model_file_url = item.model_file_url or ""
         usable_for_model = bool(model_file_url) or (
-            file_size <= get_settings().llm_max_model_image_bytes
+            item.mime_type.startswith("image/")
+            and file_size <= get_settings().llm_max_model_image_bytes
         )
         drawings.append(
             {
@@ -51,18 +60,18 @@ def build_function_agent_context(
                 "file_url": item.file_url,
                 "model_file_url": model_file_url,
                 "mime_type": item.mime_type,
-                "analysis_purpose": DRAWING_PURPOSES.get(item.drawing_type, "建筑设计判断"),
+                "analysis_purpose": get_drawing_purpose(item.drawing_type),
                 "usable_for_model": usable_for_model,
             }
         )
         if not usable_for_model:
             missing_information.append(
-                f"{item.original_name} 文件过大，未发送给模型；请压缩后重新上传。"
+                f"{item.original_name} 暂未生成模型可读取文件，未发送给模型；请稍后重试或上传图片版本。"
             )
 
     if not drawings:
         missing_information.append("未上传图纸，无法核对平面和流线细节。")
-    if not any(item["drawing_type"] == "plan" for item in drawings):
+    if not any(is_plan_drawing(item["drawing_type"]) for item in drawings):
         missing_information.append("未上传平面图，功能分区和流线判断需要降低置信度。")
     if not submission.description.strip():
         missing_information.append("缺少设计说明。")
@@ -97,17 +106,29 @@ def build_drawing_scope(drawings: list[dict]) -> str:
     if not drawings:
         return "本次未上传图纸，只能依据文字说明做低置信度评价。"
     drawing_types = {item["drawing_type"] for item in drawings}
-    if drawing_types == {"plan"}:
+    if all(is_plan_drawing(item) for item in drawing_types):
         return (
-            "本次只上传了一层平面图。只能评价这一层中可见的功能、分区和流线；"
+            "本次只上传了平面图。只能评价已上传楼层中可见的功能、分区和流线；"
             "不得把未上传的其他楼层、剖面、总平面或完整任务书缺失直接判为方案错误。"
         )
-    if "plan" in drawing_types:
+    if any(is_plan_drawing(item) for item in drawing_types):
         return (
             "本次包含平面图，可评价已上传图纸中能确认的功能、分区和流线；"
             "未上传楼层或未显示区域只能作为缺失信息提示。"
         )
     return "本次未上传平面图，功能分区和流线判断需要降低置信度。"
+
+
+def get_drawing_purpose(drawing_type: str) -> str:
+    """按图纸类型说明模型应重点判断的内容。"""
+    if drawing_type.startswith("plan-"):
+        return DRAWING_PURPOSES.get(drawing_type, "非首层平面功能、分区组织和竖向流线")
+    return DRAWING_PURPOSES.get(drawing_type, "建筑设计判断")
+
+
+def is_plan_drawing(drawing_type: str) -> bool:
+    """判断当前图纸是否属于平面图。"""
+    return drawing_type == "plan" or drawing_type.startswith("plan-")
 
 
 def get_upload_file_size(file_url: str) -> int:
@@ -206,10 +227,10 @@ def build_image_inputs(drawings: list[dict], detail: str = "low") -> list[dict]:
 
 def sort_drawings_for_model(drawings: list[dict]) -> list[dict]:
     """按评图重要性排序图纸，优先让模型先看到平面图。"""
-    priority = {"plan": 0, "site": 1, "analysis": 2, "render": 3}
+    priority = {"plan": 0, "site": 1, "section": 2, "elevation": 3, "analysis": 4, "render": 5}
     return sorted(
         drawings,
-        key=lambda item: priority.get(str(item.get("drawing_type", "")), 99),
+        key=lambda item: 0 if is_plan_drawing(str(item.get("drawing_type", ""))) else priority.get(str(item.get("drawing_type", "")), 99),
     )
 
 

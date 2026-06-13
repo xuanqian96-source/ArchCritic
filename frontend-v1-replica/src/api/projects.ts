@@ -37,9 +37,15 @@ export function updateProject(projectId: number, payload: Partial<ProjectPayload
   });
 }
 
+// 删除项目及其全部版本。
+export function deleteProject(projectId: number): Promise<{ deleted: number[]; submissions: number[] }> {
+  return requestJson(`/api/projects/${projectId}`, { method: "DELETE" });
+}
+
 // 继承已有项目。
-export function cloneProject(projectId: number): Promise<Project> {
-  return requestJson(`/api/projects/${projectId}/clone`, { method: "POST" });
+export function cloneProject(projectId: number, sourceSubmissionId?: number): Promise<Project> {
+  const query = sourceSubmissionId ? `?source_submission_id=${sourceSubmissionId}` : "";
+  return requestJson(`/api/projects/${projectId}/clone${query}`, { method: "POST" });
 }
 
 // 获取历史版本。

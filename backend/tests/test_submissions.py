@@ -6,6 +6,7 @@ from httpx import ASGITransport, AsyncClient
 from app.config import get_settings
 from app.database import init_db
 from app.main import app
+from app.routers import submissions
 from app.routers.submissions import build_feedback_items
 
 
@@ -73,6 +74,7 @@ async def test_upload_and_list_submission_files(tmp_path, monkeypatch):
     """确认图纸可以上传保存，并能按提交记录查询。"""
     monkeypatch.setenv("UPLOAD_DIR", str(tmp_path))
     monkeypatch.setenv("LLM_PROVIDER", "mock")
+    monkeypatch.setattr(submissions, "convert_pdf_to_png", lambda _content, target_path: target_path.write_bytes(b"fake-png"))
     get_settings.cache_clear()
     init_db()
     async with AsyncClient(
@@ -105,6 +107,16 @@ async def test_upload_and_list_submission_files(tmp_path, monkeypatch):
             data={"drawing_type": "site"},
             files={"file": ("site.png", b"fake-image-bytes", "image/png")},
         )
+        pdf_upload_response = await client.post(
+            f"/api/submissions/{submission_id}/files",
+            data={"drawing_type": "plan"},
+            files={"file": ("first-floor.pdf", b"%PDF-1.4\n1 0 obj\n<</Type /Page>>\nendobj", "application/pdf")},
+        )
+        multipage_pdf_response = await client.post(
+            f"/api/submissions/{submission_id}/files",
+            data={"drawing_type": "plan"},
+            files={"file": ("multi-floor.pdf", b"%PDF-1.4\n1 0 obj\n<</Type /Page>>\nendobj\n2 0 obj\n<</Type /Page>>\nendobj", "application/pdf")},
+        )
         list_response = await client.get(f"/api/submissions/{submission_id}/files")
         get_submission_response = await client.get(f"/api/submissions/{submission_id}")
 
@@ -117,12 +129,59 @@ async def test_upload_and_list_submission_files(tmp_path, monkeypatch):
     assert uploaded_file["drawing_type"] == "site"
     assert uploaded_file["original_name"] == "site.png"
     assert uploaded_file["file_url"].startswith("/uploads/submissions/")
+    assert pdf_upload_response.status_code == 201
+    pdf_file = pdf_upload_response.json()
+    assert pdf_file["mime_type"] == "image/png"
+    assert pdf_file["original_name"] == "first-floor.pdf"
+    assert pdf_file["file_url"].endswith(".png")
+    assert multipage_pdf_response.status_code == 400
+    assert "单页" in multipage_pdf_response.json()["detail"]
 
     assert list_response.status_code == 200
-    assert len(list_response.json()) == 1
+    assert len(list_response.json()) == 2
 
     assert get_submission_response.status_code == 200
     assert uploaded_file["file_url"] in get_submission_response.json()["image_urls"]
+    assert pdf_file["file_url"] in get_submission_response.json()["image_urls"]
+
+
+@pytest.mark.asyncio
+async def test_delete_submission_removes_version():
+    """确认删除单个提交版本后无法再次读取该版本。"""
+    init_db()
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        project_response = await client.post(
+            "/api/projects",
+            json={
+                "name": "版本删除测试",
+                "building_type": "公共建筑",
+                "owner_name": "测试用户",
+                "grade": "大三建筑学",
+            },
+        )
+        project_id = project_response.json()["id"]
+        submission_response = await client.post(
+            "/api/submissions",
+            json={
+                "project_id": project_id,
+                "title": "待删除版本",
+                "design_stage": "方案阶段",
+                "description": "用于测试版本删除。",
+            },
+        )
+        submission_id = submission_response.json()["id"]
+
+        delete_response = await client.delete(f"/api/submissions/{submission_id}")
+        get_response = await client.get(f"/api/submissions/{submission_id}")
+        history_response = await client.get(f"/api/projects/{project_id}/history")
+
+    assert delete_response.status_code == 200
+    assert delete_response.json()["deleted"] == [submission_id]
+    assert get_response.status_code == 404
+    assert history_response.status_code == 200
+    assert history_response.json() == []
 
 
 @pytest.mark.asyncio

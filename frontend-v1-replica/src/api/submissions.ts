@@ -27,6 +27,11 @@ export function updateSubmission(submissionId: number, payload: Partial<Submissi
   });
 }
 
+// 删除一个提交版本。
+export function deleteSubmission(submissionId: number): Promise<{ deleted: number[] }> {
+  return requestJson(`/api/submissions/${submissionId}`, { method: "DELETE" });
+}
+
 // 上传任务书等补充附件。
 export function uploadAttachment(submissionId: number, file: File): Promise<Attachment> {
   const formData = new FormData();
@@ -37,6 +42,11 @@ export function uploadAttachment(submissionId: number, file: File): Promise<Atta
 // 获取补充附件列表。
 export function listAttachments(submissionId: number): Promise<Attachment[]> {
   return requestJson(`/api/submissions/${submissionId}/attachments`);
+}
+
+// 删除一个补充附件。
+export function deleteAttachment(attachmentId: number): Promise<{ deleted: number[] }> {
+  return requestJson(`/api/submissions/attachments/${attachmentId}`, { method: "DELETE" });
 }
 
 // 解析 SSE 文本块。
