@@ -28,7 +28,11 @@ export async function requestJson<T>(path: string, options: RequestInit & { time
   const { timeoutMs: _timeoutMs, ...requestOptions } = options;
   void _timeoutMs;
   try {
-    const response = await fetch(apiUrl(path), { ...requestOptions, signal: controller.signal });
+    const response = await fetch(apiUrl(path), {
+      credentials: "include",
+      ...requestOptions,
+      signal: controller.signal,
+    });
     if (!response.ok) throw new Error(await readError(response));
     return await response.json() as T;
   } catch (error) {

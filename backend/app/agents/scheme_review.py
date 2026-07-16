@@ -1,4 +1,4 @@
-"""方案阶段多 Agent 编排，负责顺序评审和综合报告整理。"""
+"""阶段化多 Agent 编排，负责顺序评审和综合报告整理。"""
 
 import json
 from time import monotonic
@@ -24,6 +24,7 @@ from app.agents.prompts.scheme_agents_v1 import (
     build_specialist_json_schema,
     build_specialist_user_prompt,
 )
+from app.services.taskbooks import build_task_book_snapshot, calculate_weighted_score
 
 
 FUNCTION_STEP = {
@@ -36,80 +37,104 @@ REVIEW_STEP = {
     "name": "综合评审 Agent",
     "dimension": "综合评审",
 }
-SCHEME_AGENT_ORDER = [
-    FUNCTION_STEP,
-    SCHEME_SPECIALIST_SPECS["site_agent"],
-    SCHEME_SPECIALIST_SPECS["form_agent"],
-    SCHEME_SPECIALIST_SPECS["structure_agent"],
-    REVIEW_STEP,
-]
+STAGE_AGENT_ORDER = {
+    "概念阶段": ["site_agent", "form_agent", "concept_agent", "review_agent"],
+    "方案阶段": ["function_agent", "site_agent", "form_agent", "structure_agent", "review_agent"],
+    "图纸阶段": ["drawing_agent", "function_agent", "site_agent", "form_agent", "structure_agent", "review_agent"],
+}
 
 
 class ModelOutputTruncatedError(ValueError):
     """表示模型输出被长度上限截断。"""
 
 
-def is_scheme_stage(design_stage: str) -> bool:
-    """判断当前提交是否属于方案阶段。"""
+def resolve_review_stage(design_stage: str) -> str:
+    """把前端和接口阶段名称归一为三种评图阶段。"""
     normalized = str(design_stage or "").strip().lower()
-    return normalized == "scheme" or "方案" in normalized
+    if normalized == "concept" or "概念" in normalized:
+        return "概念阶段"
+    if normalized == "drawing" or "图纸" in normalized:
+        return "图纸阶段"
+    return "方案阶段"
+
+
+def is_multi_agent_stage(design_stage: str) -> bool:
+    """判断当前阶段是否使用阶段化多 Agent 编排。"""
+    normalized = str(design_stage or "").strip().lower()
+    return normalized in {"concept", "scheme", "drawing"} or any(
+        keyword in normalized for keyword in ("概念", "方案", "图纸")
+    )
 
 
 def generate_scheme_review(llm_client: Any, context: dict) -> dict:
-    """顺序执行方案阶段 Agent 并返回最终报告。"""
+    """兼容旧调用，顺序执行当前阶段 Agent 并返回最终报告。"""
     final_report = None
     for item in iter_scheme_review_events(llm_client, context):
         if item["event"] == "report":
             final_report = item["report"]
     if final_report is None:
-        raise RuntimeError("方案阶段多 Agent 未生成最终报告。")
+        raise RuntimeError("阶段化多 Agent 未生成最终报告。")
     return final_report
 
 
 def iter_scheme_review_events(llm_client: Any, context: dict) -> Iterator[dict]:
-    """按 Agent 顺序产出进度事件和最终报告。"""
+    """按阶段和用户选择顺序产出 Agent 事件与最终报告。"""
     started_at = monotonic()
     specialist_evaluations = []
-    function_agent = FunctionAgent(
-        llm_client.client,
-        llm_client.model,
-        llm_client.structured_output_mode,
-        min(llm_client.max_tokens, 1600),
-        llm_client.image_detail,
-        llm_client.extra_body,
-        llm_client.reasoning_effort,
-    )
-
-    yield build_agent_event("start", FUNCTION_STEP, "开始核对功能、分区和流线。")
-    ensure_review_budget(llm_client, started_at)
-    function_report = function_agent.run(context)
-    function_overall = function_agent_report_to_overall(function_report, context)
-    specialist_evaluations.append(function_overall["agent_evaluations"][0])
-    yield build_agent_event("done", FUNCTION_STEP, "功能与流线专项评审完成。")
-
-    for spec in (
-        SCHEME_SPECIALIST_SPECS["site_agent"],
-        SCHEME_SPECIALIST_SPECS["form_agent"],
-        SCHEME_SPECIALIST_SPECS["structure_agent"],
-    ):
+    agent_order = resolve_enabled_agent_order(context)
+    for agent_type in [item for item in agent_order if item != "review_agent"]:
+        spec = get_agent_spec(agent_type)
         yield build_agent_event("start", spec, f"开始核对{spec['dimension']}。")
         ensure_review_budget(llm_client, started_at)
-        report = SchemeSpecialistAgent(llm_client, spec).run(
-            context, remaining_seconds(llm_client, started_at)
-        )
-        specialist_evaluations.append(specialist_report_to_evaluation(spec, report))
+        if agent_type == "function_agent":
+            function_agent = FunctionAgent(
+                llm_client.client,
+                llm_client.model,
+                llm_client.structured_output_mode,
+                llm_client.max_tokens,
+                llm_client.image_detail,
+                llm_client.extra_body,
+                llm_client.reasoning_effort,
+            )
+            function_report = function_agent.run(context)
+            evaluation = function_agent_report_to_overall(function_report, context)["agent_evaluations"][0]
+        else:
+            report = SchemeSpecialistAgent(llm_client, spec).run(
+                context, remaining_seconds(llm_client, started_at)
+            )
+            evaluation = specialist_report_to_evaluation(spec, report)
+        specialist_evaluations.append(evaluation)
         yield build_agent_event("done", spec, f"{spec['dimension']}专项评审完成。")
 
-    yield build_agent_event("start", REVIEW_STEP, "正在汇总四个专项结果并生成反馈报告。")
-    ensure_review_budget(llm_client, started_at)
-    synthesis = ComprehensiveReviewAgent(llm_client).run(
-        context,
-        specialist_evaluations,
-        remaining_seconds(llm_client, started_at),
-    )
-    report = build_scheme_overall_report(synthesis, specialist_evaluations)
-    yield build_agent_event("done", REVIEW_STEP, "综合反馈报告已整理完成。")
+    if not specialist_evaluations:
+        raise ValueError("当前阶段至少需要启用一个专项 Agent。")
+    if "review_agent" in agent_order:
+        yield build_agent_event("start", REVIEW_STEP, "正在汇总已完成的专项结果并生成反馈报告。")
+        ensure_review_budget(llm_client, started_at)
+        synthesis = ComprehensiveReviewAgent(llm_client).run(
+            context,
+            specialist_evaluations,
+            remaining_seconds(llm_client, started_at),
+        )
+        yield build_agent_event("done", REVIEW_STEP, "综合反馈报告已整理完成。")
+    else:
+        synthesis = build_local_synthesis(specialist_evaluations)
+    report = build_scheme_overall_report(synthesis, specialist_evaluations, context)
     yield {"event": "report", "report": report}
+
+
+def resolve_enabled_agent_order(context: dict) -> list[str]:
+    """按阶段白名单过滤用户选择，避免前端显示与后端执行不一致。"""
+    stage_order = STAGE_AGENT_ORDER[resolve_review_stage(context.get("design_stage", ""))]
+    selected = context.get("enabled_agents") or stage_order
+    return [agent for agent in stage_order if agent in selected]
+
+
+def get_agent_spec(agent_type: str) -> dict:
+    """返回统一的 Agent 显示信息和评分规则。"""
+    if agent_type == "function_agent":
+        return FUNCTION_STEP
+    return SCHEME_SPECIALIST_SPECS[agent_type]
 
 
 def build_agent_event(status: str, spec: dict, message: str) -> dict:
@@ -131,11 +156,11 @@ def remaining_seconds(llm_client: Any, started_at: float) -> float:
 def ensure_review_budget(llm_client: Any, started_at: float) -> None:
     """超过总时限时立即停止后续 Agent。"""
     if remaining_seconds(llm_client, started_at) <= 1.0:
-        raise TimeoutError("方案阶段评审已达到总时限。")
+        raise TimeoutError("多 Agent 评审已达到总时限。")
 
 
 class SchemeSpecialistAgent:
-    """调用一个方案阶段专项 Agent。"""
+    """调用当前阶段的一个专项 Agent。"""
 
     def __init__(self, llm_client: Any, spec: dict) -> None:
         """保存模型客户端和专项规则。"""
@@ -301,7 +326,7 @@ def specialist_report_to_evaluation(spec: dict, report: dict) -> dict:
 def validate_synthesis_output(raw_output: dict) -> dict:
     """保证综合报告字段完整。"""
     return {
-        "summary": safe_text(raw_output.get("summary"), "已完成方案阶段综合评审。"),
+        "summary": safe_text(raw_output.get("summary"), "已完成当前阶段综合评审。"),
         "must_fix": safe_list(raw_output.get("must_fix"), "", allow_empty=True),
         "should_improve": safe_list(raw_output.get("should_improve"), "建议按专项结果继续深化。"),
         "optional_improvements": safe_list(
@@ -311,12 +336,26 @@ def validate_synthesis_output(raw_output: dict) -> dict:
     }
 
 
-def build_scheme_overall_report(synthesis: dict, specialist_evaluations: list[dict]) -> dict:
-    """合并专项分数和综合报告。"""
-    overall_score = round(
-        sum(item["score"] for item in specialist_evaluations) / len(specialist_evaluations),
-        1,
-    )
+def build_local_synthesis(specialist_evaluations: list[dict]) -> dict:
+    """未启用综合 Agent 时，按专项原文生成不扩写的稳定摘要。"""
+    return {
+        "summary": "；".join(item["summary"] for item in specialist_evaluations)[:360],
+        "must_fix": [issue for item in specialist_evaluations for issue in item["issues"]][:4],
+        "should_improve": [item for evaluation in specialist_evaluations for item in evaluation["suggestions"]][:4],
+        "optional_improvements": [],
+        "strengths": [item for evaluation in specialist_evaluations for item in evaluation["strengths"]][:4],
+    }
+
+
+def build_scheme_overall_report(
+    synthesis: dict,
+    specialist_evaluations: list[dict],
+    context: dict | None = None,
+) -> dict:
+    """按任务书动态权重合并专项分数和综合报告。"""
+    evaluation_context = context or {}
+    weights = evaluation_context.get("dimension_weights") or {}
+    overall_score = calculate_weighted_score(specialist_evaluations, weights)
     review_evaluation = {
         "agent_type": REVIEW_STEP["agent_type"],
         "dimension": REVIEW_STEP["dimension"],
@@ -326,6 +365,7 @@ def build_scheme_overall_report(synthesis: dict, specialist_evaluations: list[di
         "issues": synthesis["must_fix"],
         "suggestions": synthesis["should_improve"],
     }
+    include_review = not context or "review_agent" in resolve_enabled_agent_order(evaluation_context)
     return {
         "overall_score": overall_score,
         "grade": score_to_grade(overall_score),
@@ -334,5 +374,14 @@ def build_scheme_overall_report(synthesis: dict, specialist_evaluations: list[di
         "should_improve": synthesis["should_improve"],
         "optional_improvements": synthesis["optional_improvements"],
         "strengths": synthesis["strengths"],
-        "agent_evaluations": [*specialist_evaluations, review_evaluation],
+        "agent_evaluations": [
+            *specialist_evaluations,
+            *([review_evaluation] if include_review else []),
+        ],
+        "evaluation_context": {
+            "design_stage": evaluation_context.get("design_stage", ""),
+            "enabled_agents": resolve_enabled_agent_order(evaluation_context) if context else [],
+            "task_book": build_task_book_snapshot(evaluation_context.get("task_book_profile") or {}),
+            "dimension_weights": weights,
+        },
     }

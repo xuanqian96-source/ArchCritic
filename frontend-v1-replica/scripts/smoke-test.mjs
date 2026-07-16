@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const routes = ["landing", "login", "dashboard", "create", "info", "upload", "agents", "confirm", "processing", "report", "history"];
+const routes = ["landing", "auth", "dashboard", "create", "info", "upload", "agents", "confirm", "processing", "report", "history"];
 
 // 检查源码中是否包含关键内容。
 function include(source, content, message) {
@@ -18,12 +18,19 @@ async function test() {
   await access(join(root, "src", "main.tsx"));
   await access(join(root, "src", "styles.css"));
   const app = await readFile(join(root, "src", "App.tsx"), "utf8");
-  const flow = await readFile(join(root, "src", "pagesFlow.tsx"), "utf8");
+  const flow = await Promise.all([
+    "flowSetup.tsx",
+    "flowDrawings.tsx",
+    "flowReview.tsx",
+  ].map((file) => readFile(join(root, "src", "pages", file), "utf8"))).then((parts) => parts.join("\n"));
   const publicPages = await readFile(join(root, "src", "pagesPublic.tsx"), "utf8");
-  const results = await readFile(join(root, "src", "pagesResults.tsx"), "utf8");
+  const results = await Promise.all([
+    "reportPage.tsx",
+    "historyPage.tsx",
+  ].map((file) => readFile(join(root, "src", "pages", file), "utf8"))).then((parts) => parts.join("\n"));
   const workspace = await readFile(join(root, "src", "state", "workspace.tsx"), "utf8");
   routes.forEach((route) => include(app, `${route}:`, `${route} 页面路由缺失`));
-  include(publicPages, "Your full-time", "官网入口缺失");
+  include(publicPages, "/homepage-cn/archcritic-homepage-cn-figma-dark.html", "官网入口缺失");
   include(flow, "选择新建评图方式", "新建评图弹窗缺失");
   include(flow, "上传设计图纸", "上传页缺失");
   include(results, "历史版本对比", "历史版本页面缺失");

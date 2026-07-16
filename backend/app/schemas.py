@@ -5,6 +5,43 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
+class AuthRegister(BaseModel):
+    """本地注册时使用的数据结构。"""
+
+    username: str = Field(..., min_length=3, max_length=50, pattern=r"^[A-Za-z0-9_.-]+$")
+    password: str = Field(..., min_length=8, max_length=128)
+    display_name: str = Field(..., min_length=1, max_length=100)
+
+
+class AuthLogin(BaseModel):
+    """本地登录时使用的数据结构。"""
+
+    username: str = Field(..., min_length=1, max_length=50)
+    password: str = Field(..., min_length=1, max_length=128)
+
+
+class AuthUserRead(BaseModel):
+    """返回当前登录用户的公开信息。"""
+
+    id: int
+    username: str
+    display_name: str
+    role: str
+
+
+class AuthProfileUpdate(BaseModel):
+    """修改本地账户显示名称。"""
+
+    display_name: str = Field(..., min_length=1, max_length=100)
+
+
+class AuthPasswordUpdate(BaseModel):
+    """修改本地账户密码。"""
+
+    current_password: str = Field(..., min_length=1, max_length=128)
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+
 class ProjectCreate(BaseModel):
     """创建项目时使用的数据结构。"""
 
@@ -128,6 +165,8 @@ class AttachmentRead(BaseModel):
     original_name: str
     file_url: str
     mime_type: str
+    extraction_status: str = "pending"
+    extracted_text_preview: str = ""
     created_at: datetime | None = None
 
     model_config = {"from_attributes": True}
@@ -203,6 +242,7 @@ class OverallReportRead(BaseModel):
     agent_evaluations: list[AgentEvaluationRead]
     references: list[KnowledgeReferenceRead] = Field(default_factory=list)
     feedback: dict[str, list[FeedbackItemRead]] = Field(default_factory=dict)
+    evaluation_context: dict = Field(default_factory=dict)
 
 
 class SubmissionHistoryRead(BaseModel):
@@ -215,6 +255,8 @@ class SubmissionHistoryRead(BaseModel):
     overall_score: float | None = None
     grade: str | None = None
     summary: str = ""
+    must_fix: list[str] = Field(default_factory=list)
+    strengths: list[str] = Field(default_factory=list)
     dimension_scores: dict[str, float] = Field(default_factory=dict)
 
 

@@ -59,7 +59,7 @@ async def test_frontend_v1_complete_api_flow(tmp_path, monkeypatch):
         )
         attachment_response = await client.post(
             f"/api/submissions/{submission_id}/attachments",
-            files={"file": ("taskbook.pdf", b"pdf-bytes", "application/pdf")},
+            files={"file": ("taskbook.txt", "设计任务要求重点关注展厅功能、参观流线与公共空间概念。".encode("utf-8"), "text/plain")},
         )
         report_response = await client.post(
             f"/api/submissions/{submission_id}/evaluate-demo"

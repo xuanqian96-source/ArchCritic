@@ -1,6 +1,7 @@
 /* 统一样式：保留 Figma 基准色、阴影和画布尺寸，布局主要由 Tailwind 工具类完成。 */
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&family=Noto+Sans+SC:wght@400;500;600;700;900&display=swap");
 @import "tailwindcss";
+@import "./styles/report.css";
 
 :root {
   color: #171719;
@@ -75,6 +76,10 @@ button {
   text-rendering: geometricPrecision;
 }
 
+.sidebar-selected-version-text {
+  font-weight: 700 !important;
+}
+
 .sidebar-menu-text {
   font-family: "Inter", "Noto Sans SC", "Microsoft YaHei", sans-serif !important;
   font-size: 10px !important;
@@ -118,6 +123,92 @@ button {
   display: inline-flex !important;
   align-items: center;
   justify-content: center;
+  transition: opacity 180ms ease, transform 180ms ease, background-color 180ms ease, border-color 180ms ease, color 180ms ease, box-shadow 180ms ease;
+  will-change: transform, opacity;
+}
+
+.app-action-button:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+.app-action-button:not(:disabled):active {
+  transform: translateY(0);
+}
+
+.flow-page-motion {
+  animation: flow-page-enter 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  will-change: opacity, transform;
+}
+
+.flow-surface-motion {
+  transition: opacity 180ms ease, transform 180ms ease, background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+  will-change: transform, opacity;
+}
+
+.flow-surface-motion:hover {
+  transform: translateY(-1px);
+}
+
+.flow-popover {
+  animation: flow-popover-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  transform-origin: top center;
+  will-change: opacity, transform;
+}
+
+input,
+textarea,
+.confirm-model-button {
+  transition: border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease, opacity 180ms ease;
+}
+
+.confirm-model-button:focus-visible {
+  border-color: #6c4dff;
+  box-shadow: 0 0 0 3px rgba(108, 77, 255, 0.1);
+}
+
+input:focus,
+textarea:focus {
+  box-shadow: none;
+}
+
+@keyframes flow-page-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(10px, 0, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes flow-popover-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -4px, 0) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
+  }
+
+  .app-action-button:not(:disabled):hover,
+  .flow-surface-motion:hover {
+    transform: none;
+  }
 }
 
 .confirm-model-button {
@@ -148,6 +239,23 @@ button {
   line-height: 20px !important;
 }
 
+.drawing-description-input {
+  font-family: "Inter", "Noto Sans SC", "Microsoft YaHei", sans-serif !important;
+  font-size: 14px !important;
+  font-weight: 400 !important;
+  line-height: 20px !important;
+}
+
+.drawing-description-input:focus {
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+.confirm-info-input:focus {
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
 .upload-loading-dots {
   display: inline-block;
   width: 0.9em;
@@ -168,9 +276,9 @@ button {
 
 .issue-overlay-nav {
   font-family: "Inter", "Noto Sans SC", "Microsoft YaHei", sans-serif !important;
-  font-size: 16px !important;
+  font-size: 13px !important;
   font-weight: 700 !important;
-  line-height: 24px !important;
+  line-height: 20px !important;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -212,252 +320,4 @@ button {
   border-radius: 999px;
   background: #cbd2dc;
   background-clip: padding-box;
-}
-
-.report-light-scroll {
-  scrollbar-color: #cbd2dc transparent;
-  scrollbar-width: thin;
-}
-
-.report-light-scroll::-webkit-scrollbar {
-  width: 7px;
-  height: 7px;
-}
-
-.report-light-scroll::-webkit-scrollbar-button {
-  height: 0;
-  width: 0;
-  display: none;
-}
-
-.report-light-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.report-light-scroll::-webkit-scrollbar-thumb {
-  border: 1px solid transparent;
-  border-radius: 999px;
-  background: #cbd2dc;
-  background-clip: padding-box;
-}
-
-.report-dark-scroll {
-  scrollbar-color: #60636d transparent;
-  scrollbar-width: thin;
-}
-
-.report-dark-scroll::-webkit-scrollbar {
-  width: 7px;
-}
-
-.report-dark-scroll::-webkit-scrollbar-button {
-  height: 0;
-  width: 0;
-  display: none;
-}
-
-.report-dark-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.report-dark-scroll::-webkit-scrollbar-thumb {
-  border: 1px solid transparent;
-  border-radius: 999px;
-  background: #60636d;
-  background-clip: padding-box;
-}
-
-.report-dimension-tab {
-  overflow: hidden;
-  white-space: nowrap;
-}
-
-.report-top-action-button {
-  font-family: "Inter", "Noto Sans SC", "Microsoft YaHei", sans-serif !important;
-  font-size: 14px !important;
-  font-weight: 700 !important;
-  line-height: 20px !important;
-  display: inline-flex !important;
-  align-items: center;
-  justify-content: center;
-  padding-right: 0 !important;
-  padding-left: 0 !important;
-}
-
-.report-trace-text {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.report-score-ring {
-  overflow: visible;
-}
-
-.report-score-ring::before {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  content: "";
-  border-radius: 999px;
-  background: conic-gradient(#6c4dff 0deg var(--score-degree), #efe9ff var(--score-degree) 360deg);
-}
-
-.report-chat-scroll {
-  scrollbar-color: #cbd2dc transparent;
-  scrollbar-width: thin;
-}
-
-.report-chat-scroll::-webkit-scrollbar {
-  width: 7px;
-}
-
-.report-chat-scroll::-webkit-scrollbar-button {
-  height: 0;
-  width: 0;
-  display: none;
-}
-
-.report-chat-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.report-chat-scroll::-webkit-scrollbar-thumb {
-  border: 1px solid transparent;
-  border-radius: 999px;
-  background: #cbd2dc;
-  background-clip: padding-box;
-}
-
-.report-chat-send-button {
-  display: inline-flex !important;
-  align-items: center;
-  justify-content: center;
-  padding: 0 !important;
-}
-
-.report-model-arrow {
-  position: absolute;
-  top: 50%;
-  right: 14px;
-  width: 9px;
-  height: 9px;
-  border-right: 2px solid #6b7385;
-  border-bottom: 2px solid #6b7385;
-  transform: translateY(-65%) rotate(45deg);
-}
-
-.report-model-arrow.rotate-right {
-  transform: translateY(-50%) rotate(-45deg);
-}
-
-.history-point-active {
-  animation: history-point-breathe 1.15s ease-in-out infinite;
-  transform-box: fill-box;
-  transform-origin: center;
-}
-
-@keyframes history-point-breathe {
-  0%, 100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.82;
-    transform: scale(1.35);
-  }
-}
-
-.canvas-frame {
-  position: absolute;
-  transform-origin: top left;
-}
-
-.canvas-content {
-  width: 1536px;
-  height: 820px;
-}
-
-.canvas-content > div {
-  background-color: transparent !important;
-}
-
-
-.figma-shadow {
-  box-shadow: 0 1px 2px rgba(17, 19, 24, 0.03), 0 18px 46px -26px rgba(17, 19, 24, 0.06);
-}
-
-.sidebar-shadow {
-  box-shadow: 0 20px 24px rgba(23, 23, 26, 0.1);
-}
-
-.panel {
-  border: 1px solid #e8ebef;
-  background: #fafbfc;
-  border-radius: 24px;
-}
-
-.white-panel {
-  border: 1px solid #e8ebef;
-  background: #fff;
-  border-radius: 20px;
-}
-
-.figma-scroll-content {
-  scrollbar-width: none;
-}
-
-.figma-scroll-content::-webkit-scrollbar {
-  display: none;
-}
-
-.sidebar-scroll {
-  overflow-x: hidden;
-  scrollbar-color: #cbd2dc transparent;
-  scrollbar-width: thin;
-}
-
-.sidebar-scroll::-webkit-scrollbar {
-  width: 7px;
-}
-
-.sidebar-scroll::-webkit-scrollbar-button {
-  height: 0;
-  width: 0;
-  display: none;
-}
-
-.sidebar-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.sidebar-scroll::-webkit-scrollbar-thumb {
-  border: 1px solid transparent;
-  border-radius: 999px;
-  background: #cbd2dc;
-  background-clip: padding-box;
-}
-
-.project-status-dot {
-  animation: project-status-breathe 1.8s ease-in-out infinite;
-  transform-origin: center;
-}
-
-@keyframes project-status-breathe {
-  0%, 100% {
-    transform: scale(0.82);
-    opacity: 0.82;
-  }
-  50% {
-    transform: scale(1.12);
-    opacity: 1;
-  }
-}
-
-.history-grid {
-  background-image:
-    linear-gradient(#eef0f3 1px, transparent 1px),
-    linear-gradient(90deg, #eef0f3 1px, transparent 1px);
-  background-size: 58px 44px;
 }

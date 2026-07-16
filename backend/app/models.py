@@ -15,12 +15,30 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(100))
+    username: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, unique=True, index=True
+    )
+    password_hash: Mapped[str | None] = mapped_column(String(300), nullable=True)
     role: Mapped[str] = mapped_column(String(50), default="student")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 
     projects: Mapped[list["Project"]] = relationship(back_populates="owner")
+
+
+class UserSession(Base):
+    """保存本地登录会话，不在浏览器中存放明文凭据。"""
+
+    __tablename__ = "user_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class Project(Base):
@@ -114,11 +132,19 @@ class Attachment(Base):
     original_name: Mapped[str] = mapped_column(String(255))
     file_url: Mapped[str] = mapped_column(String(500))
     mime_type: Mapped[str] = mapped_column(String(100))
+    extracted_text: Mapped[str] = mapped_column(Text, default="")
+    extraction_status: Mapped[str] = mapped_column(String(30), default="pending")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 
     submission: Mapped[Submission] = relationship(back_populates="attachments")
+
+    @property
+    def extracted_text_preview(self) -> str:
+        """返回适合附件列表展示的短预览，不暴露完整任务书。"""
+        text = (self.extracted_text or "").strip()
+        return text[:160]
 
 
 class ChatMessage(Base):
@@ -173,6 +199,7 @@ class OverallReport(Base):
     should_improve: Mapped[list[str]] = mapped_column(JSON, default=list)
     optional_improvements: Mapped[list[str]] = mapped_column(JSON, default=list)
     strengths: Mapped[list[str]] = mapped_column(JSON, default=list)
+    evaluation_context: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

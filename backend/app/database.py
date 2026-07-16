@@ -66,6 +66,25 @@ def ensure_sqlite_columns(engine: Engine) -> None:
                 text("ALTER TABLE projects ADD COLUMN course_name VARCHAR(200) DEFAULT ''")
             )
 
+        if "users" in inspector.get_table_names():
+            user_columns = {
+                column["name"] for column in inspector.get_columns("users")
+            }
+            if "username" not in user_columns:
+                connection.execute(
+                    text("ALTER TABLE users ADD COLUMN username VARCHAR(100)")
+                )
+            if "password_hash" not in user_columns:
+                connection.execute(
+                    text("ALTER TABLE users ADD COLUMN password_hash VARCHAR(300)")
+                )
+            connection.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_username_unique "
+                    "ON users(username) WHERE username IS NOT NULL"
+                )
+            )
+
         table_names = set(inspector.get_table_names())
         if "submissions" in table_names:
             submission_columns = {
@@ -113,6 +132,19 @@ def ensure_sqlite_columns(engine: Engine) -> None:
                     text("ALTER TABLE drawing_files ADD COLUMN sort_order INTEGER DEFAULT 0")
                 )
 
+        if "attachments" in table_names:
+            attachment_columns = {
+                column["name"] for column in inspector.get_columns("attachments")
+            }
+            if "extracted_text" not in attachment_columns:
+                connection.execute(
+                    text("ALTER TABLE attachments ADD COLUMN extracted_text TEXT DEFAULT ''")
+                )
+            if "extraction_status" not in attachment_columns:
+                connection.execute(
+                    text("ALTER TABLE attachments ADD COLUMN extraction_status VARCHAR(30) DEFAULT 'pending'")
+                )
+
         if "agent_evaluations" in table_names:
             agent_columns = {
                 column["name"] for column in inspector.get_columns("agent_evaluations")
@@ -120,6 +152,16 @@ def ensure_sqlite_columns(engine: Engine) -> None:
             if "details" not in agent_columns:
                 connection.execute(
                     text("ALTER TABLE agent_evaluations ADD COLUMN details JSON DEFAULT '{}'")
+                )
+
+
+        if "overall_reports" in table_names:
+            report_columns = {
+                column["name"] for column in inspector.get_columns("overall_reports")
+            }
+            if "evaluation_context" not in report_columns:
+                connection.execute(
+                    text("ALTER TABLE overall_reports ADD COLUMN evaluation_context JSON DEFAULT '{}'")
                 )
 
 

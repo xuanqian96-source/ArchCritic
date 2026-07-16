@@ -46,11 +46,39 @@ SCHEME_SPECIALIST_SPECS = {
         },
         "observed_targets": ["柱网或支撑", "大跨度空间", "悬挑或架空", "竖向交通", "结构说明"],
     },
+    "concept_agent": {
+        "agent_type": "concept_agent",
+        "name": "设计概念 Agent",
+        "dimension": "设计概念",
+        "purpose": "核对概念立意、概念与场地关系、空间转译和整体一致性。",
+        "drawing_focus": "优先读取概念说明、分析图、总平面和体现空间叙事的图纸。",
+        "sub_scores": {
+            "概念清晰度": 30,
+            "概念与场地": 25,
+            "概念空间转译": 25,
+            "概念一致性": 20,
+        },
+        "observed_targets": ["概念关键词", "生成逻辑", "场地回应", "空间转译", "图文一致性"],
+    },
+    "drawing_agent": {
+        "agent_type": "drawing_agent",
+        "name": "图面表达 Agent",
+        "dimension": "图面表达",
+        "purpose": "核对图纸完整性、信息层级、制图清晰度和版面表达。",
+        "drawing_focus": "读取全部成果图，重点核对图名、标注、线型、比例关系和版面阅读顺序。",
+        "sub_scores": {
+            "图纸完整性": 25,
+            "信息层级": 25,
+            "制图清晰度": 25,
+            "版面表达": 25,
+        },
+        "observed_targets": ["图纸种类", "图名与标注", "线型层级", "版面秩序", "阅读路径"],
+    },
 }
 
 
 SPECIALIST_SYSTEM_PROMPT = """
-你是 ArchCritic 的方案阶段专项评审 Agent，同时具备建筑设计课教师和建筑方案评图助教视角。
+你是 ArchCritic 的阶段化专项评审 Agent，同时具备建筑设计课教师和建筑方案评图助教视角。
 
 你只能评价当前被分配的专项维度。必须依据设计说明、已上传图纸和知识库依据判断，不得把推测写成确定事实。
 
@@ -67,14 +95,14 @@ SPECIALIST_SYSTEM_PROMPT = """
 
 
 COMPREHENSIVE_SYSTEM_PROMPT = """
-你是 ArchCritic 的“综合评审 Agent”，负责把方案阶段各专项 Agent 的结果整理为正式反馈报告。
+你是 ArchCritic 的“综合评审 Agent”，负责把当前设计阶段已启用的专项 Agent 结果整理为正式反馈报告。
 
 综合规则：
 1. 只汇总专项 Agent 已给出的事实、分数、问题和建议，不新增未经专项结果支持的图纸事实。
 2. 先保留跨专项重复出现或影响后续深化的问题，再保留局部优化建议。
 3. 报告语言应严谨、清楚、可执行，区分必须修改、建议优化和可选优化。
 4. 如果专项结果存在不确定观察，最终报告不能把它升级成确定性批评。
-5. 总结必须覆盖功能与流线、场地回应、几何形式、结构可行性四个角度。
+5. 总结必须覆盖本次真实执行的专项角度，不得补写未执行 Agent 的评价。
 6. 关键反馈如果来自带 [K1] 这类知识依据编号的专项结论，必须保留对应编号，方便用户追溯知识卡片。
 7. 输出必须是 JSON/json 对象，不能输出 Markdown、解释文字或代码块。
 """.strip()
@@ -208,7 +236,7 @@ def build_specialist_user_prompt(context: dict, spec: dict) -> str:
     """整理专项 Agent 读取的图文上下文。"""
     references = "\n".join(build_reference_prompt_item(item) for item in context["references"])
     drawings = "\n".join(
-        f"- {item['drawing_type']}：{item['original_name']}，用于判断 {item['analysis_purpose']}"
+        build_drawing_prompt_item(item)
         for item in context["drawings"]
     )
     missing = "\n".join(f"- {item}" for item in context["missing_information"])
@@ -238,6 +266,13 @@ def build_specialist_user_prompt(context: dict, spec: dict) -> str:
 
 【任务书要求或摘要】
 {context["task_book_summary"]}
+
+【任务书明确要求】
+{chr(10).join(f"- {item}" for item in context.get("task_book_requirements", [])) or "未提取到明确条目。"}
+
+【本专项最终占比】
+{context.get("dimension_weights", {}).get(spec["agent_type"], 0):g}%
+评分时优先服从任务书深度和当前年级要求；任务书没有要求的高阶内容不得作为主要扣分依据。
 
 【设计说明】
 {context["description"]}
@@ -292,7 +327,7 @@ def build_comprehensive_user_prompt(context: dict, specialist_evaluations: list[
         for item in specialist_evaluations
     ]
     return f"""
-请把以下方案阶段专项评审结果整理为正式反馈报告。
+请把以下当前设计阶段专项评审结果整理为正式反馈报告。
 
 【项目信息】
 项目名称：{context["project_name"]}
@@ -308,13 +343,20 @@ def build_comprehensive_user_prompt(context: dict, specialist_evaluations: list[
 写成报告摘要，不重复粘贴专项 Agent 的长段原文。
 关键问题与建议如果有知识依据编号，保留 [K1] 这类编号。
 {{
-  "summary": "覆盖四个专项视角的总体反馈摘要",
+  "summary": "覆盖本次已执行专项视角的总体反馈摘要",
   "must_fix": ["会阻碍方案继续深化的确定问题"],
   "should_improve": ["下一轮优先优化项"],
   "optional_improvements": ["可选深化项"],
   "strengths": ["可以保留并继续发展的优势"]
 }}
 """.strip()
+
+
+def build_drawing_prompt_item(item: dict) -> str:
+    """把单张图纸及其说明整理成模型可读的一行文字。"""
+    drawing_note = str(item.get("description") or "").strip()
+    note_text = f"；图纸说明：{drawing_note}" if drawing_note else ""
+    return f"- {item['drawing_type']}：{item['original_name']}，用于判断 {item['analysis_purpose']}{note_text}"
 
 
 def build_reference_prompt_item(item: dict) -> str:

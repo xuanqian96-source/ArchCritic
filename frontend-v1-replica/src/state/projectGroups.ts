@@ -7,6 +7,7 @@ export interface ProjectVersion {
   submission: Submission;
   history: SubmissionHistory | null;
   versionNumber: number;
+  activityAt: string;
 }
 
 export interface ProjectGroup {
@@ -15,6 +16,19 @@ export interface ProjectGroup {
   projects: Project[];
   latestProject: Project;
   versions: ProjectVersion[];
+  lastActivityAt: string;
+}
+
+// 判断版本是否仍使用系统默认标题。
+export function isDefaultSubmissionTitle(title?: string) {
+  return !title?.trim() || title.trim().endsWith("提交");
+}
+
+// 项目侧栏、报告标题和历史页统一使用这一套版本名称规则。
+export function getProjectVersionLabel(version: ProjectVersion) {
+  const title = version.submission.title.trim();
+  if (!isDefaultSubmissionTitle(title)) return title;
+  return version.history?.overall_score == null ? "草稿" : `V${version.versionNumber}`;
 }
 
 export const PINNED_PROJECT_IDS_KEY = "archcritic:pinned-project-ids";
@@ -65,6 +79,61 @@ function createSignature(projects: Project[]) {
   return projects.map((project) => `${project.id}:${project.name}:${project.created_at ?? ""}`).join(",");
 }
 
+// 读取提交的最近活动时间，优先使用后端维护的更新时间。
+function getSubmissionActivityAt(submission: Submission) {
+  return submission.updated_at ?? submission.created_at ?? "";
+}
+
+// 比较两个版本的时间，时间相同时用编号保证顺序稳定。
+function compareVersionsByActivity(a: ProjectVersion, b: ProjectVersion) {
+  return a.activityAt.localeCompare(b.activityAt) || a.submission.id - b.submission.id;
+}
+
+// 从项目创建时间中取一个兜底活动时间。
+function getProjectGroupFallbackActivity(projects: Project[]) {
+  return projects.reduce((latest, project) => {
+    const time = project.created_at ?? "";
+    return time > latest ? time : latest;
+  }, "");
+}
+
+// 未出分的多条草稿只保留最后一次修改；已出分记录继续按时间编号。
+function normalizeProjectVersions(versions: ProjectVersion[]) {
+  let latestDraft: ProjectVersion | null = null;
+  const completedVersions: ProjectVersion[] = [];
+
+  versions.forEach((version) => {
+    if (version.history?.overall_score == null) {
+      if (!latestDraft || compareVersionsByActivity(latestDraft, version) <= 0) {
+        latestDraft = version;
+      }
+      return;
+    }
+    completedVersions.push(version);
+  });
+
+  const normalized = latestDraft ? [...completedVersions, latestDraft] : completedVersions;
+  normalized.sort(compareVersionsByActivity);
+
+  let completedIndex = 1;
+  return normalized.map((version) => ({
+    ...version,
+    versionNumber: version.history?.overall_score == null ? 0 : completedIndex++,
+  }));
+}
+
+// 计算项目组最后活动时间，用于侧栏日期和排序。
+function getLastActivityAt(versions: ProjectVersion[], fallback: string) {
+  return versions.reduce((latest, version) => version.activityAt > latest ? version.activityAt : latest, fallback);
+}
+
+// 按最后活动时间排序项目组，最新的显示在前面。
+function sortGroupsByActivity(groups: ProjectGroup[]) {
+  return [...groups].sort((a, b) => {
+    return b.lastActivityAt.localeCompare(a.lastActivityAt) || b.latestProject.id - a.latestProject.id;
+  });
+}
+
 // 按项目名称归并后端记录，并保留后端返回的最近更新时间顺序。
 function createBaseGroups(projects: Project[]): ProjectGroup[] {
   const groups = new Map<string, ProjectGroup>();
@@ -82,21 +151,19 @@ function createBaseGroups(projects: Project[]): ProjectGroup[] {
       projects: [project],
       latestProject: project,
       versions: [],
+      lastActivityAt: project.created_at ?? "",
     });
   });
-  return [...groups.values()].map((group) => {
+  return sortGroupsByActivity([...groups.values()].map((group) => {
     group.projects.sort((a, b) => {
       const timeA = a.created_at ?? "";
       const timeB = b.created_at ?? "";
       return timeB.localeCompare(timeA) || b.id - a.id;
     });
     group.latestProject = group.projects[0];
+    group.lastActivityAt = getProjectGroupFallbackActivity(group.projects);
     return group;
-  }).sort((a, b) => {
-    const timeA = a.latestProject.created_at ?? "";
-    const timeB = b.latestProject.created_at ?? "";
-    return timeB.localeCompare(timeA) || b.latestProject.id - a.latestProject.id;
-  });
+  }));
 }
 
 // 项目列表变化时尽量沿用已加载版本，避免首页卡片短暂回到未加载状态。
@@ -106,20 +173,16 @@ function hydrateBaseGroupsFromCache(groups: ProjectGroup[]) {
   cachedGroups.forEach((group) => {
     group.versions.forEach((version) => cachedVersions.set(version.submission.id, version));
   });
-  return groups.map((group) => {
+  return sortGroupsByActivity(groups.map((group) => {
     const projectIds = new Set(group.projects.map((project) => project.id));
     const versions = [...cachedVersions.values()].filter((version) => projectIds.has(version.project.id));
-    versions.sort((a, b) => {
-      const timeA = a.submission.created_at ?? "";
-      const timeB = b.submission.created_at ?? "";
-      return timeA.localeCompare(timeB) || a.submission.id - b.submission.id;
-    });
-    let completedIndex = 1;
-    versions.forEach((version) => {
-      version.versionNumber = version.history?.overall_score == null ? 0 : completedIndex++;
-    });
-    return { ...group, versions };
-  });
+    const normalizedVersions = normalizeProjectVersions(versions);
+    return {
+      ...group,
+      versions: normalizedVersions,
+      lastActivityAt: getLastActivityAt(normalizedVersions, group.lastActivityAt),
+    };
+  }));
 }
 
 // 返回可立即显示的分组；已有缓存时页面切换不会短暂变空。
@@ -156,22 +219,15 @@ export function loadProjectGroups(projects: Project[]) {
           submission,
           history: detail?.history.find((item) => item.id === submission.id) ?? null,
           versionNumber: 0,
+          activityAt: getSubmissionActivityAt(submission),
         }));
       });
-      versions.sort((a, b) => {
-        const timeA = a.submission.created_at ?? "";
-        const timeB = b.submission.created_at ?? "";
-        return timeA.localeCompare(timeB) || a.submission.id - b.submission.id;
-      });
-      let completedIndex = 1;
-      versions.forEach((version) => {
-        version.versionNumber = version.history?.overall_score == null ? 0 : completedIndex++;
-      });
-      group.versions = versions;
+      group.versions = normalizeProjectVersions(versions);
+      group.lastActivityAt = getLastActivityAt(versions, getProjectGroupFallbackActivity(group.projects));
     });
     cachedSignature = signature;
-    cachedGroups = groups;
-    return groups;
+    cachedGroups = sortGroupsByActivity(groups);
+    return cachedGroups;
   }).finally(() => {
     pendingRequest = null;
     pendingSignature = "";

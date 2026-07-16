@@ -10,6 +10,13 @@ export interface Project {
   created_at?: string | null;
 }
 
+export interface LocalUser {
+  id: number;
+  username: string;
+  display_name: string;
+  role: string;
+}
+
 export interface Submission {
   id: number;
   project_id: number;
@@ -43,6 +50,8 @@ export interface Attachment {
   original_name: string;
   file_url: string;
   mime_type: string;
+  extraction_status?: string;
+  extracted_text_preview?: string;
   created_at?: string | null;
 }
 
@@ -92,6 +101,7 @@ export interface OverallReport {
   agent_evaluations: AgentEvaluation[];
   references: KnowledgeReference[];
   feedback: Record<string, FeedbackItem[]>;
+  evaluation_context?: Record<string, unknown>;
 }
 
 export interface SubmissionHistory {
@@ -102,11 +112,13 @@ export interface SubmissionHistory {
   overall_score?: number | null;
   grade?: string | null;
   summary?: string;
+  must_fix?: string[];
+  strengths?: string[];
   dimension_scores?: Record<string, number>;
 }
 
 export interface EvaluationStreamEvent {
-  event: "status" | "agent" | "delta" | "reasoning" | "final" | "error";
+  event: "status" | "stage" | "agent" | "delta" | "reasoning" | "final" | "error";
   payload: Record<string, unknown>;
 }
 

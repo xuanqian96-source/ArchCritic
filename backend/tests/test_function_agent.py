@@ -1,10 +1,15 @@
 """验证功能与流线 Agent 的输出校验和报告转换。"""
 
+from types import SimpleNamespace
+
 from app.agents.function_agent import (
+    build_function_agent_context,
     build_image_inputs,
     function_agent_report_to_overall,
     validate_function_agent_output,
 )
+from app.agents.prompts.function_agent_v1 import build_function_agent_user_prompt
+from app.agents.prompts.scheme_agents_v1 import SCHEME_SPECIALIST_SPECS, build_specialist_user_prompt
 from app.routers.submissions import build_model_error_message
 
 
@@ -95,6 +100,35 @@ def test_build_image_inputs_keeps_all_usable_drawings_in_priority_order():
 
     urls = [item["image_url"]["url"] for item in image_inputs]
     assert urls == ["oss://plan.png", "oss://site.png", "oss://render.png"]
+
+
+def test_drawing_description_is_included_in_model_prompts():
+    """确认单张图纸说明会进入功能 Agent 和方案阶段专项 Agent 提示词。"""
+    submission = SimpleNamespace(
+        project=SimpleNamespace(
+            name="社区活动中心",
+            building_type="社区活动中心",
+            owner_name="测试用户",
+            grade="大三",
+        ),
+        design_stage="方案阶段",
+        description="项目总说明",
+    )
+    drawing = SimpleNamespace(
+        drawing_type="section",
+        original_name="剖面图.png",
+        file_url="/uploads/not-exists.png",
+        model_file_url="oss://section.png",
+        mime_type="image/png",
+        description="剖面重点说明架空层与报告厅的竖向关系。",
+    )
+    context = build_function_agent_context(submission, [drawing], [])
+
+    function_prompt = build_function_agent_user_prompt(context)
+    scheme_prompt = build_specialist_user_prompt(context, SCHEME_SPECIALIST_SPECS["structure_agent"])
+
+    assert "图纸说明：剖面重点说明架空层与报告厅的竖向关系。" in function_prompt
+    assert "图纸说明：剖面重点说明架空层与报告厅的竖向关系。" in scheme_prompt
 
 
 def test_observed_facts_demote_uncertain_must_fix():

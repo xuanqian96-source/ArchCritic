@@ -6,7 +6,7 @@ from httpx import ASGITransport, AsyncClient
 from app.config import get_settings
 from app.database import init_db
 from app.main import app
-from app.routers import submissions
+from app.routers import submission_crud, submissions
 from app.routers.submissions import build_feedback_items
 
 
@@ -74,7 +74,7 @@ async def test_upload_and_list_submission_files(tmp_path, monkeypatch):
     """确认图纸可以上传保存，并能按提交记录查询。"""
     monkeypatch.setenv("UPLOAD_DIR", str(tmp_path))
     monkeypatch.setenv("LLM_PROVIDER", "mock")
-    monkeypatch.setattr(submissions, "convert_pdf_to_png", lambda _content, target_path: target_path.write_bytes(b"fake-png"))
+    monkeypatch.setattr(submission_crud, "convert_pdf_to_png", lambda _content, target_path: target_path.write_bytes(b"fake-png"))
     get_settings.cache_clear()
     init_db()
     async with AsyncClient(

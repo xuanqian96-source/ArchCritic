@@ -1,7 +1,7 @@
 """封装 OpenAI 模型调用，供真实评图 Agent 使用。"""
 
 from app.agents.function_agent import FunctionAgent, function_agent_report_to_overall
-from app.agents.scheme_review import generate_scheme_review, is_scheme_stage
+from app.agents.scheme_review import generate_scheme_review, is_multi_agent_stage
 from app.llm.base import BaseLLMClient
 
 
@@ -48,7 +48,7 @@ class OpenAILLMClient(BaseLLMClient):
 
     def generate_evaluation(self, payload: dict) -> dict:
         """按阶段调用真实 Agent，并转换成前端报告结构。"""
-        if is_scheme_stage(payload.get("design_stage", "")):
+        if is_multi_agent_stage(payload.get("design_stage", "")):
             return generate_scheme_review(self, payload)
 
         agent = FunctionAgent(

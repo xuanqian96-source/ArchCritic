@@ -66,7 +66,10 @@ export async function evaluateStream(
   onEvent: (event: EvaluationStreamEvent) => void,
 ): Promise<void> {
   const query = new URLSearchParams({ provider, model });
-  const response = await fetch(apiUrl(`/api/submissions/${submissionId}/evaluate-stream?${query.toString()}`));
+  const response = await fetch(apiUrl(`/api/submissions/${submissionId}/evaluate-stream?${query.toString()}`), {
+    method: "POST",
+    credentials: "include",
+  });
   if (!response.ok || !response.body) throw new Error("流式评图接口请求失败。");
   const reader = response.body.getReader();
   const decoder = new TextDecoder();

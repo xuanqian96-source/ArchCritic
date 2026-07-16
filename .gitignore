@@ -14,6 +14,10 @@ venv/
 *.sqlite3
 backend/uploads/
 
+# Local research datasets
+标注基准集/
+frontend-v1-replica/public/homepage-cn/README.txt
+
 # Node
 node_modules/
 frontend/dist/

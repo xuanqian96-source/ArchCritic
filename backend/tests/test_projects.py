@@ -3,6 +3,7 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from app.config import get_settings
 from app.database import init_db
 from app.main import app
 
@@ -44,8 +45,10 @@ async def test_create_and_list_projects():
 
 
 @pytest.mark.asyncio
-async def test_delete_project_removes_related_submissions():
-    """确认删除项目会同时删除该项目下的提交版本。"""
+async def test_delete_project_removes_related_submissions(tmp_path, monkeypatch):
+    """确认删除项目会同时删除提交记录和不再使用的本地图纸。"""
+    monkeypatch.setenv("UPLOAD_DIR", str(tmp_path))
+    get_settings.cache_clear()
     init_db()
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
@@ -70,6 +73,12 @@ async def test_delete_project_removes_related_submissions():
             },
         )
         submission_id = submission_response.json()["id"]
+        upload_response = await client.post(
+            f"/api/submissions/{submission_id}/files",
+            data={"drawing_type": "plan"},
+            files={"file": ("plan.png", b"image-bytes", "image/png")},
+        )
+        upload_path = tmp_path / upload_response.json()["file_url"].removeprefix("/uploads/")
 
         delete_response = await client.delete(f"/api/projects/{project_id}")
         project_after_delete = await client.get(f"/api/projects/{project_id}")
@@ -80,3 +89,6 @@ async def test_delete_project_removes_related_submissions():
     assert delete_response.json()["submissions"] == [submission_id]
     assert project_after_delete.status_code == 404
     assert submission_after_delete.status_code == 404
+    assert not upload_path.exists()
+    monkeypatch.delenv("UPLOAD_DIR", raising=False)
+    get_settings.cache_clear()

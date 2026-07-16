@@ -27,7 +27,10 @@ class Settings(BaseSettings):
     wiki_dir: str = "../../wiki-test/wiki"
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     app_name: str = "ArchCritic API"
-    app_version: str = "0.1.0"
+    app_version: str = "0.2.0"
+    auth_cookie_name: str = "archcritic_session"
+    auth_session_days: int = 30
+    auth_cookie_secure: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

@@ -1,7 +1,7 @@
 // 应用路由：串联设计稿中的全部页面，并复用统一工作区连接现有后端。
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Canvas } from "./components";
-import { LandingPage, LoginPage } from "./pagesPublic";
+import { LandingPage } from "./pagesPublic";
 import {
   AgentsPage,
   ConfirmPage,
@@ -12,10 +12,12 @@ import {
   UploadPage,
 } from "./pagesFlow";
 import { HistoryPage, ReportPage } from "./pagesResults";
+import { AuthPage } from "./pagesAuth";
+import { useAuth } from "./state/auth";
 
 export type Route =
   | "landing"
-  | "login"
+  | "auth"
   | "dashboard"
   | "create"
   | "info"
@@ -32,7 +34,7 @@ export interface PageProps {
 
 const VALID_ROUTES = new Set<Route>([
   "landing",
-  "login",
+  "auth",
   "dashboard",
   "create",
   "info",
@@ -79,6 +81,7 @@ function useCanvasLayout(): CanvasLayout {
 export default function App() {
   const [route, setRoute] = useState<Route>(readRoute);
   const layout = useCanvasLayout();
+  const { loading, user } = useAuth();
 
   useEffect(() => {
     const update = () => setRoute(readRoute());
@@ -86,16 +89,24 @@ export default function App() {
     return () => window.removeEventListener("hashchange", update);
   }, []);
 
-  const go = (next: Route) => {
-    window.location.hash = `/${next}`;
-    setRoute(next);
-  };
+  const go = useCallback((next: Route) => {
+    const protectedNext = next !== "landing" && next !== "auth";
+    const resolved = protectedNext && !user ? "auth" : next;
+    window.location.hash = `/${resolved}`;
+    setRoute(resolved);
+  }, [user]);
+
+  useEffect(() => {
+    if (loading) return;
+    if (!user && route !== "landing" && route !== "auth") go("auth");
+    if (user && route === "auth") go("dashboard");
+  }, [go, loading, route, user]);
 
   const page = useMemo(() => {
     const props = { go };
     return {
       landing: <LandingPage {...props} />,
-      login: <LoginPage {...props} />,
+      auth: <AuthPage {...props} />,
       dashboard: <DashboardPage {...props} />,
       create: <CreateModalPage {...props} />,
       info: <ProjectInfoPage {...props} />,
@@ -106,7 +117,11 @@ export default function App() {
       report: <ReportPage {...props} />,
       history: <HistoryPage {...props} />,
     }[route];
-  }, [route]);
+  }, [go, route]);
+
+  if (loading && route !== "landing") return <div className="flex h-screen w-screen items-center justify-center bg-[#f4f6f8] text-[13px] font-bold text-[#53565e]">正在读取本地账户...</div>;
+  if (!user && route !== "landing" && route !== "auth") return <AuthPage go={go} />;
+  if (route === "landing") return page;
 
   return <Canvas {...layout}>{page}</Canvas>;
 }

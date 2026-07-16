@@ -1,169 +1,17 @@
-// 工作区状态：集中保存项目草稿、图纸、评图过程和报告，供全部页面复用。
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from "react";
+// 工作区状态：协调项目草稿、图纸、任务书、评图过程和报告。
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from "react";
 import { checkHealth } from "../api/client";
-import { deleteDrawing, deleteDrawings, listDrawings, updateDrawing, uploadDrawing } from "../api/files";
+import { listDrawings } from "../api/files";
 import { cloneProject, createProject, getProject, getProjectHistory, listProjects, listProjectSubmissions, updateProject } from "../api/projects";
 import { downloadReport, getReport, listChatMessages, sendChat } from "../api/reports";
-import { cancelEvaluation, createSubmission, deleteAttachment, evaluateStream, getSubmission, listAttachments, updateSubmission, uploadAttachment } from "../api/submissions";
-import type { Attachment, ChatMessage, DrawingFile, EvaluationStreamEvent, OverallReport, Project, Submission, SubmissionHistory } from "../types/api";
+import { cancelEvaluation, createSubmission, evaluateStream, getSubmission, listAttachments, updateSubmission } from "../api/submissions";
+import type { Attachment, ChatMessage, DrawingFile, OverallReport, Project, Submission, SubmissionHistory } from "../types/api";
+import { useAuth } from "./auth";
+import { applyEvaluationEvent, cleanSavedDescription, DEFAULT_DRAFT, DUPLICATE_PROJECT_NAME_MESSAGE, EMPTY_EVALUATION, type DraftValues, type EvaluationStatus, getLastSubmissionKey, LAST_SUBMISSION_KEY, normalizeProjectNameForCompare, normalizeSavedModel, type SubmissionPreload, type SubmissionSnapshot, type WorkspaceState, waitForChatFrame, WorkspaceContext } from "./workspaceShared";
+import { useWorkspaceFileActions } from "./workspaceFileActions";
 
-const DEFAULT_AGENTS = ["function_agent", "site_agent", "form_agent", "structure_agent", "review_agent"];
-const DEFAULT_MODEL = { provider: "dashscope", model: "qwen3.6-plus", label: "qwen3.6-plus" };
-const ACCEPTED_DRAWING_TYPES = ["application/pdf"];
-
-export interface DraftValues {
-  name: string;
-  buildingType: string;
-  ownerName: string;
-  grade: string;
-  siteLocation: string;
-  courseName: string;
-  description: string;
-  designStage: string;
-  enabledAgents: string[];
-  modelProvider: string;
-  modelName: string;
-  modelLabel: string;
-}
-
-export interface EvaluationStatus {
-  running: boolean;
-  progress: number;
-  completedAgents: string[];
-  activeAgent: string;
-  messages: string[];
-  error: string;
-}
-
-interface WorkspaceState {
-  projects: Project[];
-  project: Project | null;
-  submission: Submission | null;
-  drawings: DrawingFile[];
-  attachments: Attachment[];
-  report: OverallReport | null;
-  history: SubmissionHistory[];
-  chatMessages: ChatMessage[];
-  draft: DraftValues;
-  draftDirty: boolean;
-  selectedDrawingId: number | null;
-  evaluation: EvaluationStatus;
-  notice: string;
-  setNotice: (message: string) => void;
-  setDraftField: <K extends keyof DraftValues>(field: K, value: DraftValues[K]) => void;
-  resetDraft: () => void;
-  toggleAgent: (agentType: string) => void;
-  saveDraft: () => Promise<Submission>;
-  uploadFiles: (files: FileList | File[]) => Promise<void>;
-  replaceSelectedDrawing: (file: File) => Promise<void>;
-  uploadTaskbook: (file: File) => Promise<void>;
-  deleteTaskbook: (attachmentId: number) => Promise<void>;
-  selectDrawing: (fileId: number) => void;
-  updateSelectedDrawing: (payload: Partial<Pick<DrawingFile, "drawing_type" | "description">>) => Promise<void>;
-  deleteSelectedDrawing: () => Promise<void>;
-  deleteAllDrawings: () => Promise<void>;
-  deleteDrawingIds: (fileIds: number[]) => Promise<void>;
-  startEvaluation: () => Promise<void>;
-  pauseEvaluation: () => Promise<void>;
-  downloadCurrentReport: () => void;
-  sendQuestion: (content: string) => Promise<void>;
-  inheritProject: (projectId: number, sourceSubmissionId?: number) => Promise<void>;
-  refreshProjects: () => Promise<void>;
-  syncProjectName: (projectIds: number[], name: string) => void;
-  syncSubmissionTitle: (submissionId: number, title: string) => void;
-  openProject: (projectId: number, preloadProject?: Project) => Promise<void>;
-  openSubmission: (submissionId: number, preload?: SubmissionPreload) => Promise<void>;
-  prefetchSubmission: (submissionId: number, preload?: SubmissionPreload) => void;
-}
-
-const DEFAULT_DRAFT: DraftValues = {
-  name: "",
-  buildingType: "",
-  ownerName: "前端工程师",
-  grade: "",
-  siteLocation: "",
-  courseName: "",
-  description: "",
-  designStage: "方案阶段",
-  enabledAgents: DEFAULT_AGENTS,
-  modelProvider: DEFAULT_MODEL.provider,
-  modelName: DEFAULT_MODEL.model,
-  modelLabel: DEFAULT_MODEL.label,
-};
-
-const EMPTY_EVALUATION: EvaluationStatus = {
-  running: false,
-  progress: 0,
-  completedAgents: [],
-  activeAgent: "",
-  messages: [],
-  error: "",
-};
-
-// 判断文件是否可以作为图纸上传。
-function isAcceptedDrawingFile(file: File) {
-  return file.type.startsWith("image/") || ACCEPTED_DRAWING_TYPES.includes(file.type);
-}
-
-const WorkspaceContext = createContext<WorkspaceState | null>(null);
-const LAST_SUBMISSION_KEY = "archcritic:last-submission-id";
-
-interface SubmissionPreload {
-  project?: Project;
-  submission?: Submission;
-}
-
-interface SubmissionSnapshot {
-  project: Project;
-  submission: Submission;
-  drawings: DrawingFile[];
-  attachments: Attachment[];
-  history: SubmissionHistory[];
-  report: OverallReport | null;
-  chatMessages: ChatMessage[];
-}
-
-// 把流式事件转换为等待页需要的状态。
-function applyEvaluationEvent(
-  current: EvaluationStatus,
-  event: EvaluationStreamEvent,
-): EvaluationStatus {
-  const payload = event.payload;
-  if (event.event === "status") {
-    return { ...current, messages: [...current.messages, String(payload.message ?? "")] };
-  }
-  if (event.event === "agent") {
-    const agentType = String(payload.agent_type ?? "");
-    const completedAgents = payload.status === "done" && !current.completedAgents.includes(agentType)
-      ? [...current.completedAgents, agentType]
-      : current.completedAgents;
-    return {
-      ...current,
-      activeAgent: payload.status === "start" ? agentType : "",
-      completedAgents,
-      progress: Math.min(95, 10 + completedAgents.length * 18),
-      messages: [...current.messages, String(payload.message ?? "")],
-    };
-  }
-  if (event.event === "error") {
-    return { ...current, running: false, error: String(payload.message ?? "评图失败。") };
-  }
-  return current;
-}
-
-// 兼容旧草稿中保存过的空说明占位文案。
-function cleanSavedDescription(description?: string | null) {
-  return description === "未填写设计说明。" ? "" : description ?? "";
-}
-
-// 旧草稿可能保存过演示模型，恢复时统一转成当前真实默认模型。
-function normalizeSavedModel(provider?: string | null, model?: string | null) {
-  if (provider === "gemini") return { provider, model: model || "gemini-2.5-flash" };
-  return { provider: "dashscope", model: model && model !== "demo" ? model : "qwen3.6-plus" };
-}
-
-// 为所有页面提供统一工作区状态。
 export function WorkspaceProvider({ children }: PropsWithChildren) {
+  const { user } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [project, setProject] = useState<Project | null>(null);
   const [submission, setSubmission] = useState<Submission | null>(null);
@@ -178,7 +26,27 @@ export function WorkspaceProvider({ children }: PropsWithChildren) {
   const [evaluation, setEvaluation] = useState<EvaluationStatus>(EMPTY_EVALUATION);
   const [notice, setNotice] = useState("");
   const openRequestRef = useRef(0);
+  const evaluationRequestRef = useRef(0);
+  const pauseRequestedRef = useRef(false);
   const submissionCacheRef = useRef(new Map<number, SubmissionSnapshot | Promise<SubmissionSnapshot>>());
+  const draftRef = useRef(draft);
+  const projectRef = useRef(project);
+  const submissionRef = useRef(submission);
+  const draftRevisionRef = useRef(0);
+  const saveDraftRequestRef = useRef<Promise<Submission> | null>(null);
+  const saveDraftQueuedRef = useRef(false);
+
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+
+  useEffect(() => {
+    projectRef.current = project;
+  }, [project]);
+
+  useEffect(() => {
+    submissionRef.current = submission;
+  }, [submission]);
 
   // 当前提交内容变化后清掉详情缓存，避免从首页回来时看到旧图纸或旧附件。
   const invalidateSubmissionCache = useCallback((submissionId?: number | null) => {
@@ -188,8 +56,9 @@ export function WorkspaceProvider({ children }: PropsWithChildren) {
 
   // 更新单个草稿字段。
   const setDraftField = useCallback(<K extends keyof DraftValues>(field: K, value: DraftValues[K]) => {
-    setDraft((current) => ({ ...current, [field]: value }));
+    draftRevisionRef.current += 1;
     setDraftDirty(true);
+    setDraft((current) => ({ ...current, [field]: value }));
   }, []);
 
   // 重新加载项目首页所需列表。
@@ -270,8 +139,8 @@ export function WorkspaceProvider({ children }: PropsWithChildren) {
     setSelectedDrawingId(snapshot.drawings[0]?.id ?? null);
     fillDraft(snapshot.project, snapshot.submission);
     setDraftDirty(false);
-    window.localStorage.setItem(LAST_SUBMISSION_KEY, String(snapshot.submission.id));
-  }, [fillDraft]);
+    window.localStorage.setItem(getLastSubmissionKey(user?.username), String(snapshot.submission.id));
+  }, [fillDraft, user?.username]);
 
   // 预取提交详情，只填缓存，不改变当前页面。
   const prefetchSubmission = useCallback((submissionId: number, preload?: SubmissionPreload) => {
@@ -336,13 +205,18 @@ export function WorkspaceProvider({ children }: PropsWithChildren) {
   }, [fillDraft, openSubmission]);
 
   useEffect(() => {
+    if (!user) return;
     void refreshProjects();
-  }, [refreshProjects]);
-
-  useEffect(() => {
-    const savedId = Number(window.localStorage.getItem(LAST_SUBMISSION_KEY));
-    if (savedId) void openSubmission(savedId).catch(() => window.localStorage.removeItem(LAST_SUBMISSION_KEY));
-  }, [openSubmission]);
+    const scopedKey = getLastSubmissionKey(user.username);
+    const legacyValue = window.localStorage.getItem(LAST_SUBMISSION_KEY);
+    const savedId = Number(window.localStorage.getItem(scopedKey) ?? legacyValue);
+    if (legacyValue && !window.localStorage.getItem(scopedKey)) {
+      window.localStorage.setItem(scopedKey, legacyValue);
+      window.localStorage.removeItem(LAST_SUBMISSION_KEY);
+    }
+    if (savedId) void openSubmission(savedId).catch(() => window.localStorage.removeItem(scopedKey));
+    setDraft((current) => current.ownerName === DEFAULT_DRAFT.ownerName ? { ...current, ownerName: user.display_name } : current);
+  }, [openSubmission, refreshProjects, user]);
 
   // 清空当前工作区，并恢复空白新建表单。
   const resetDraft = useCallback(() => {
@@ -355,13 +229,14 @@ export function WorkspaceProvider({ children }: PropsWithChildren) {
     setHistory([]);
     setSelectedDrawingId(null);
     setEvaluation(EMPTY_EVALUATION);
-    setDraft(DEFAULT_DRAFT);
+    setDraft({ ...DEFAULT_DRAFT, ownerName: user?.display_name ?? DEFAULT_DRAFT.ownerName });
     setDraftDirty(false);
-    window.localStorage.removeItem(LAST_SUBMISSION_KEY);
-  }, []);
+    window.localStorage.removeItem(getLastSubmissionKey(user?.username));
+  }, [user?.display_name, user?.username]);
 
   // 开关某个专项 Agent。
   const toggleAgent = useCallback((agentType: string) => {
+    draftRevisionRef.current += 1;
     setDraft((current) => ({
       ...current,
       enabledAgents: current.enabledAgents.includes(agentType)
@@ -371,184 +246,161 @@ export function WorkspaceProvider({ children }: PropsWithChildren) {
     setDraftDirty(true);
   }, []);
 
-  // 创建或更新当前项目与草稿提交。
-  const saveDraft = useCallback(async (): Promise<Submission> => {
+  // 执行一次真实草稿保存，保存期间的新修改会保持未保存状态。
+  const performDraftSave = useCallback(async (): Promise<Submission> => {
     await checkHealth();
+    const draftSnapshot = draftRef.current;
+    const projectSnapshot = projectRef.current;
+    const submissionSnapshot = submissionRef.current;
+    const startedRevision = draftRevisionRef.current;
     const projectPayload = {
-      name: draft.name || "未命名项目",
-      building_type: draft.buildingType || "未填写类型",
-      owner_name: draft.ownerName || "未填写提交人",
-      grade: draft.grade,
-      site_location: draft.siteLocation,
-      course_name: draft.courseName,
+      name: draftSnapshot.name || "未命名项目",
+      building_type: draftSnapshot.buildingType || "未填写类型",
+      owner_name: draftSnapshot.ownerName || "未填写提交人",
+      grade: draftSnapshot.grade,
+      site_location: draftSnapshot.siteLocation,
+      course_name: draftSnapshot.courseName,
     };
-    const savedProject = project
-      ? await updateProject(project.id, projectPayload)
+    const normalizedProjectName = normalizeProjectNameForCompare(projectPayload.name);
+    if (!projectSnapshot && normalizedProjectName && projects.some((item) => normalizeProjectNameForCompare(item.name) === normalizedProjectName)) {
+      throw new Error(DUPLICATE_PROJECT_NAME_MESSAGE);
+    }
+    const savedProject = projectSnapshot
+      ? await updateProject(projectSnapshot.id, projectPayload)
       : await createProject(projectPayload);
+    projectRef.current = savedProject;
     setProject(savedProject);
     const submissionPayload = {
       project_id: savedProject.id,
-      title: `${draft.designStage}提交`,
-      design_stage: draft.designStage,
-      description: draft.description,
+      title: `${draftSnapshot.designStage}提交`,
+      design_stage: draftSnapshot.designStage,
+      description: draftSnapshot.description,
       status: "draft",
-      enabled_agents: draft.enabledAgents,
-      selected_model_provider: draft.modelProvider,
-      selected_model_name: draft.modelName,
+      enabled_agents: draftSnapshot.enabledAgents,
+      selected_model_provider: draftSnapshot.modelProvider,
+      selected_model_name: draftSnapshot.modelName,
     };
-    const savedSubmission = submission
-      ? await updateSubmission(submission.id, submissionPayload)
+    const savedSubmission = submissionSnapshot
+      ? await updateSubmission(submissionSnapshot.id, submissionPayload)
       : await createSubmission(submissionPayload);
+    submissionRef.current = savedSubmission;
     setSubmission(savedSubmission);
-    setDraftDirty(false);
-    window.localStorage.setItem(LAST_SUBMISSION_KEY, String(savedSubmission.id));
+    setDraftDirty(startedRevision !== draftRevisionRef.current);
+    window.localStorage.setItem(getLastSubmissionKey(user?.username), String(savedSubmission.id));
     setNotice("草稿已保存。");
     invalidateSubmissionCache(savedSubmission.id);
     await refreshProjects();
     return savedSubmission;
-  }, [draft, invalidateSubmissionCache, project, refreshProjects, submission]);
+  }, [invalidateSubmissionCache, projects, refreshProjects, user?.username]);
 
-  // 上传图片并立即同步到右侧列表。
-  const uploadFiles = useCallback(async (files: FileList | File[]) => {
-    const savedSubmission = await saveDraft();
-    const drawingFiles = Array.from(files).filter(isAcceptedDrawingFile);
-    if (!drawingFiles.length) throw new Error("当前只支持上传图片或 PDF 图纸。");
-    const added: DrawingFile[] = [];
-    for (const file of drawingFiles) {
-      added.push(await uploadDrawing(savedSubmission.id, "plan", file));
+  // 创建或更新当前项目与草稿提交；连续保存会排队合并，避免重复创建草稿。
+  const saveDraft = useCallback(async (): Promise<Submission> => {
+    if (saveDraftRequestRef.current) {
+      saveDraftQueuedRef.current = true;
+      return saveDraftRequestRef.current;
     }
-    invalidateSubmissionCache(savedSubmission.id);
-    setDrawings((current) => [...current, ...added]);
-    setSelectedDrawingId(added[0]?.id ?? null);
-    setDraftDirty(true);
-    setNotice(`已上传 ${added.length} 张图纸。`);
-  }, [invalidateSubmissionCache, saveDraft]);
-
-  // 用新图片替换当前选中的图纸，并保留原卡片位置。
-  const replaceSelectedDrawing = useCallback(async (file: File) => {
-    if (!isAcceptedDrawingFile(file)) throw new Error("当前只支持上传图片或 PDF 图纸。");
-    const savedSubmission = await saveDraft();
-    const currentDrawing = drawings.find((item) => item.id === selectedDrawingId);
-    if (!currentDrawing) {
-      const added = await uploadDrawing(savedSubmission.id, "plan", file);
-      invalidateSubmissionCache(savedSubmission.id);
-      setDrawings((current) => [...current, added]);
-      setSelectedDrawingId(added.id);
-      setDraftDirty(true);
-      setNotice("图纸已上传。");
-      return;
-    }
-    const added = await uploadDrawing(savedSubmission.id, currentDrawing.drawing_type || "plan", file);
-    const updated = await updateDrawing(added.id, {
-      description: currentDrawing.description ?? "",
-      sort_order: currentDrawing.sort_order,
-    });
-    await deleteDrawing(currentDrawing.id);
-    invalidateSubmissionCache(savedSubmission.id);
-    setDrawings((current) => current.map((item) => item.id === currentDrawing.id ? updated : item));
-    setSelectedDrawingId(updated.id);
-    setDraftDirty(true);
-    setNotice("图纸已替换。");
-  }, [drawings, invalidateSubmissionCache, saveDraft, selectedDrawingId]);
-
-  // 上传任务书并同步当前页面。
-  const uploadTaskbook = useCallback(async (file: File) => {
-    const savedSubmission = await saveDraft();
-    const added = await uploadAttachment(savedSubmission.id, file);
-    invalidateSubmissionCache(savedSubmission.id);
-    setAttachments((current) => [...current, added]);
-    setDraftDirty(true);
-    setNotice("任务书已上传。");
-  }, [invalidateSubmissionCache, saveDraft]);
-
-  // 删除已上传的任务书或补充资料。
-  const deleteTaskbook = useCallback(async (attachmentId: number) => {
-    await deleteAttachment(attachmentId);
-    invalidateSubmissionCache(submission?.id);
-    setAttachments((current) => current.filter((item) => item.id !== attachmentId));
-    setDraftDirty(true);
-    setNotice("附件已删除。");
-  }, [invalidateSubmissionCache, submission?.id]);
-
-  // 修改当前选中图纸的类型或说明。
-  const updateSelectedDrawing = useCallback(async (payload: Partial<Pick<DrawingFile, "drawing_type" | "description">>) => {
-    if (!selectedDrawingId) return;
-    const updated = await updateDrawing(selectedDrawingId, payload);
-    invalidateSubmissionCache(updated.submission_id);
-    setDrawings((current) => current.map((item) => item.id === updated.id ? updated : item));
-    setDraftDirty(true);
-    setNotice("图纸信息已更新。");
-  }, [invalidateSubmissionCache, selectedDrawingId]);
-
-  // 删除当前选中图纸。
-  const deleteSelectedDrawing = useCallback(async () => {
-    if (!selectedDrawingId) return;
-    await deleteDrawing(selectedDrawingId);
-    invalidateSubmissionCache(submission?.id);
-    setDrawings((current) => {
-      const deletedIndex = current.findIndex((item) => item.id === selectedDrawingId);
-      const remaining = current.filter((item) => item.id !== selectedDrawingId);
-      const previousIndex = Math.max(0, deletedIndex - 1);
-      setSelectedDrawingId(remaining[previousIndex]?.id ?? remaining[remaining.length - 1]?.id ?? null);
-      return remaining;
-    });
-    setDraftDirty(true);
-    setNotice("图纸已删除。");
-  }, [invalidateSubmissionCache, selectedDrawingId, submission?.id]);
-
-  // 删除当前提交的全部图纸。
-  const deleteAllDrawings = useCallback(async () => {
-    await deleteDrawings(drawings.map((item) => item.id));
-    invalidateSubmissionCache(submission?.id);
-    setDrawings([]);
-    setSelectedDrawingId(null);
-    setDraftDirty(true);
-    setNotice("已删除所选图纸。");
-  }, [drawings, invalidateSubmissionCache, submission?.id]);
-
-  // 删除批量编辑中勾选的图纸。
-  const deleteDrawingIds = useCallback(async (fileIds: number[]) => {
-    if (!fileIds.length) return;
-    const removingIds = new Set(fileIds);
-    await deleteDrawings(fileIds);
-    invalidateSubmissionCache(submission?.id);
-    setDrawings((current) => {
-      const currentSelectedId = selectedDrawingId;
-      const deletedIndex = currentSelectedId ? current.findIndex((item) => item.id === currentSelectedId) : -1;
-      const remaining = current.filter((item) => !removingIds.has(item.id));
-      if (currentSelectedId && removingIds.has(currentSelectedId)) {
-        const previous = current.slice(0, deletedIndex).reverse().find((item) => !removingIds.has(item.id));
-        setSelectedDrawingId(previous?.id ?? remaining[0]?.id ?? null);
+    const request = (async () => {
+      let savedSubmission: Submission | null = null;
+      do {
+        saveDraftQueuedRef.current = false;
+        savedSubmission = await performDraftSave();
+      } while (saveDraftQueuedRef.current);
+      return savedSubmission;
+    })();
+    saveDraftRequestRef.current = request;
+    try {
+      return await request;
+    } finally {
+      if (saveDraftRequestRef.current === request) {
+        saveDraftRequestRef.current = null;
       }
-      return remaining;
-    });
-    setDraftDirty(true);
-    setNotice(`已删除 ${fileIds.length} 张图纸。`);
-  }, [invalidateSubmissionCache, selectedDrawingId, submission?.id]);
+    }
+  }, [performDraftSave]);
+
+  const {
+    deleteAllDrawings,
+    deleteDrawingIds,
+    deleteSelectedDrawing,
+    deleteTaskbook,
+    replaceSelectedDrawing,
+    updateSelectedDrawing,
+    uploadFiles,
+    uploadTaskbook,
+  } = useWorkspaceFileActions({
+    drawings,
+    selectedDrawingId,
+    submissionId: submission?.id,
+    saveDraft,
+    invalidateSubmissionCache,
+    setAttachments,
+    setDrawings,
+    setSelectedDrawingId,
+    setDraftDirty,
+    setNotice,
+  });
 
   // 确认提交后启动流式评图。
   const startEvaluation = useCallback(async () => {
+    const requestId = evaluationRequestRef.current + 1;
+    evaluationRequestRef.current = requestId;
+    pauseRequestedRef.current = false;
     try {
       const savedSubmission = await saveDraft();
+      let finalReceived = false;
       setReport(null);
-      setEvaluation({ ...EMPTY_EVALUATION, running: true, progress: 10 });
+      setEvaluation({ ...EMPTY_EVALUATION, running: true, progress: 5, startedAt: Date.now() });
       await updateSubmission(savedSubmission.id, {
         status: "evaluating",
         selected_model_provider: draft.modelProvider,
         selected_model_name: draft.modelName,
       });
       await evaluateStream(savedSubmission.id, draft.modelProvider, draft.modelName, (event) => {
+        if (evaluationRequestRef.current !== requestId) return;
+        if (pauseRequestedRef.current && event.event !== "status") return;
         setEvaluation((current) => applyEvaluationEvent(current, event));
-        if (event.event === "final") {
+        if (!pauseRequestedRef.current && event.event === "final") {
+          finalReceived = true;
           setReport(event.payload.report as unknown as OverallReport);
-          setEvaluation((current) => ({ ...current, running: false, progress: 100, activeAgent: "" }));
+          setEvaluation((current) => ({
+            ...current,
+            running: false,
+            paused: false,
+            progress: 100,
+            activeAgent: "",
+            activeStageId: "",
+            completedStages: current.completedStages.includes("report") ? current.completedStages : [...current.completedStages, "report"],
+            messages: [...current.messages, "评图已完成，请点击“查看评图报告”查看结果。"],
+          }));
         }
       });
-      setHistory(await getProjectHistory(savedSubmission.project_id));
-      setNotice("评图报告已生成。");
+      if (finalReceived) {
+        setHistory(await getProjectHistory(savedSubmission.project_id));
+        setNotice("评图报告已生成。");
+      }
     } catch (error) {
+      if (pauseRequestedRef.current) {
+        setEvaluation((current) => ({
+          ...current,
+          running: false,
+          paused: true,
+          activeAgent: "",
+          activeStageId: "",
+          messages: current.messages.includes("评图已暂停，可点击“继续评图”恢复。")
+            ? current.messages
+            : [...current.messages, "评图已暂停，可点击“继续评图”恢复。"],
+        }));
+        return;
+      }
       const message = error instanceof Error ? error.message : "评图失败。";
-      setEvaluation((current) => ({ ...current, running: false, error: message }));
+      setEvaluation((current) => ({
+        ...current,
+        running: false,
+        paused: false,
+        errorStageId: current.activeAgent || current.activeStageId || "report",
+        activeAgent: "",
+        activeStageId: "",
+        error: message,
+      }));
       setNotice(message);
     }
   }, [draft.modelName, draft.modelProvider, saveDraft]);
@@ -556,8 +408,20 @@ export function WorkspaceProvider({ children }: PropsWithChildren) {
   // 暂停当前评图任务。
   const pauseEvaluation = useCallback(async () => {
     if (!submission) return;
+    pauseRequestedRef.current = true;
     await cancelEvaluation(submission.id);
-    setEvaluation((current) => ({ ...current, running: false, activeAgent: "" }));
+    setEvaluation((current) => ({
+      ...current,
+      running: false,
+      paused: true,
+      activeAgent: "",
+      activeStageId: "",
+      pausedAt: Date.now(),
+      elapsedBeforePause: current.startedAt ? current.elapsedBeforePause + Date.now() - current.startedAt : current.elapsedBeforePause,
+      messages: current.messages.includes("评图已暂停，可点击“继续评图”恢复。")
+        ? current.messages
+        : [...current.messages, "评图已暂停，可点击“继续评图”恢复。"],
+    }));
     setNotice("评图已暂停。");
   }, [submission]);
 
@@ -572,7 +436,17 @@ export function WorkspaceProvider({ children }: PropsWithChildren) {
     const question: ChatMessage = { role: "user", content: content.trim() };
     setChatMessages((current) => [...current, question]);
     const answer = await sendChat(submission.id, question.content, draft.modelProvider, draft.modelName);
-    setChatMessages((current) => [...current, answer]);
+    setChatMessages((current) => [...current, { role: "assistant", content: "" }]);
+    for (let index = 1; index <= answer.content.length; index += 1) {
+      const nextContent = answer.content.slice(0, index);
+      setChatMessages((current) => current.map((item, itemIndex) => (
+        itemIndex === current.length - 1 ? { ...answer, content: nextContent } : item
+      )));
+      if (index % 3 === 0) await waitForChatFrame();
+    }
+    setChatMessages((current) => current.map((item, itemIndex) => (
+      itemIndex === current.length - 1 ? answer : item
+    )));
   }, [draft.modelName, draft.modelProvider, submission]);
 
   // 从已有项目复制资料进入新一轮评图。

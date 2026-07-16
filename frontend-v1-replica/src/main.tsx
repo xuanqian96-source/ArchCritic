@@ -4,14 +4,17 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { ProfileProvider } from "./state/profile";
 import { WorkspaceProvider } from "./state/workspace";
+import { AuthProvider } from "./state/auth";
 import "./styles.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <ProfileProvider>
-      <WorkspaceProvider>
-        <App />
-      </WorkspaceProvider>
-    </ProfileProvider>
+    <AuthProvider>
+      <ProfileProvider>
+        <WorkspaceProvider>
+          <App />
+        </WorkspaceProvider>
+      </ProfileProvider>
+    </AuthProvider>
   </React.StrictMode>,
 );

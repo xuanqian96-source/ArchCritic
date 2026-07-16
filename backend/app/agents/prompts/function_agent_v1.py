@@ -133,7 +133,7 @@ def build_function_agent_user_prompt(context: dict) -> str:
         for item in context["references"]
     )
     drawings = "\n".join(
-        f"- {item['drawing_type']}：{item['original_name']}，用于判断 {item['analysis_purpose']}"
+        build_drawing_prompt_item(item)
         for item in context["drawings"]
     )
     missing = "\n".join(f"- {item}" for item in context["missing_information"])
@@ -150,6 +150,13 @@ def build_function_agent_user_prompt(context: dict) -> str:
 
 【任务书要求或摘要】
 {context["task_book_summary"]}
+
+【任务书明确要求】
+{chr(10).join(f"- {item}" for item in context.get("task_book_requirements", [])) or "未提取到明确条目。"}
+
+【本次评分占比】
+功能与流线专项占最终总分 {context.get("dimension_weights", {}).get("function_agent", 100):g}%。
+任务书未要求的内容不得作为高权重扣分项；低年级任务未强调结构时，不得用施工图深度要求压低本专项评分。
 
 【设计说明】
 {context["description"]}
@@ -223,6 +230,13 @@ def build_function_agent_user_prompt(context: dict) -> str:
 7. must_fix 只能写“图纸和说明均支持”的确定问题；如果设计说明说有但图纸看不清，必须放入 uncertain_observations。
 8. 四项 score 相加应等于总分；不要单独输出 total_score、overall_score 或 grade。
 """.strip()
+
+
+def build_drawing_prompt_item(item: dict) -> str:
+    """把单张图纸及其说明整理成模型可读的一行文字。"""
+    drawing_note = str(item.get("description") or "").strip()
+    note_text = f"；图纸说明：{drawing_note}" if drawing_note else ""
+    return f"- {item['drawing_type']}：{item['original_name']}，用于判断 {item['analysis_purpose']}{note_text}"
 
 
 def build_reference_prompt_item(item: dict) -> str:
