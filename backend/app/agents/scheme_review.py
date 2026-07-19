@@ -25,6 +25,7 @@ from app.agents.prompts.scheme_agents_v1 import (
     build_specialist_user_prompt,
 )
 from app.services.taskbooks import build_task_book_snapshot, calculate_weighted_score
+from app.scoring.overall import build_evidence_score
 
 
 FUNCTION_STEP = {
@@ -82,11 +83,18 @@ def iter_scheme_review_events(llm_client: Any, context: dict) -> Iterator[dict]:
     started_at = monotonic()
     specialist_evaluations = []
     agent_order = resolve_enabled_agent_order(context)
+    use_evidence_v2 = context.get("scoring_architecture") == "evidence_v2"
     for agent_type in [item for item in agent_order if item != "review_agent"]:
         spec = get_agent_spec(agent_type)
         yield build_agent_event("start", spec, f"开始核对{spec['dimension']}。")
         ensure_review_budget(llm_client, started_at)
-        if agent_type == "function_agent":
+        if use_evidence_v2:
+            from app.agents.evidence_review import EvidenceSpecialistAgent
+
+            evaluation = EvidenceSpecialistAgent(llm_client, agent_type).run(
+                context, remaining_seconds(llm_client, started_at)
+            )
+        elif agent_type == "function_agent":
             function_agent = FunctionAgent(
                 llm_client.client,
                 llm_client.model,
@@ -249,13 +257,22 @@ def build_completion_kwargs(
 
 def create_json_completion(llm_client: Any, create_kwargs: dict) -> dict:
     """调用模型并解析 JSON，兼容部分供应商参数差异。"""
-    try:
-        response = llm_client.client.chat.completions.create(**create_kwargs)
-    except Exception as exc:
-        if "enable_thinking" not in str(exc):
+    response = None
+    for attempt in range(2):
+        try:
+            response = llm_client.client.chat.completions.create(**create_kwargs)
+            break
+        except Exception as exc:
+            if "enable_thinking" in str(exc):
+                create_kwargs.pop("extra_body", None)
+                continue
+            if attempt == 0 and type(exc).__name__ in {
+                "APIConnectionError", "APITimeoutError", "ConnectError", "ReadTimeout"
+            }:
+                continue
             raise
-        create_kwargs.pop("extra_body", None)
-        response = llm_client.client.chat.completions.create(**create_kwargs)
+    if response is None:
+        raise RuntimeError("模型连接重试后仍未返回结果。")
     choice = response.choices[0]
     if getattr(choice, "finish_reason", "") == "length":
         raise ModelOutputTruncatedError("模型 JSON 输出达到长度上限，报告未返回完整。")
@@ -317,7 +334,7 @@ def specialist_report_to_evaluation(spec: dict, report: dict) -> dict:
         "score": report["overall_score"],
         "summary": report["summary"],
         "strengths": report["strengths"],
-        "issues": report["must_fix"] + report["uncertain_observations"][:2],
+        "issues": report["must_fix"],
         "suggestions": report["should_improve"],
         "details": build_agent_evaluation_details(report),
     }
@@ -355,7 +372,17 @@ def build_scheme_overall_report(
     """按任务书动态权重合并专项分数和综合报告。"""
     evaluation_context = context or {}
     weights = evaluation_context.get("dimension_weights") or {}
-    overall_score = calculate_weighted_score(specialist_evaluations, weights)
+    score_audit = None
+    if evaluation_context.get("scoring_architecture") == "evidence_v2":
+        score_audit = build_evidence_score(
+            specialist_evaluations,
+            weights,
+            evaluation_context.get("structured_requirements") or [],
+            evaluation_context.get("score_calibration"),
+        )
+        overall_score = score_audit["calibrated_score"]
+    else:
+        overall_score = calculate_weighted_score(specialist_evaluations, weights)
     review_evaluation = {
         "agent_type": REVIEW_STEP["agent_type"],
         "dimension": REVIEW_STEP["dimension"],
@@ -364,6 +391,7 @@ def build_scheme_overall_report(
         "strengths": synthesis["strengths"],
         "issues": synthesis["must_fix"],
         "suggestions": synthesis["should_improve"],
+        "details": {"score_audit": score_audit} if score_audit else {},
     }
     include_review = not context or "review_agent" in resolve_enabled_agent_order(evaluation_context)
     return {
@@ -383,5 +411,6 @@ def build_scheme_overall_report(
             "enabled_agents": resolve_enabled_agent_order(evaluation_context) if context else [],
             "task_book": build_task_book_snapshot(evaluation_context.get("task_book_profile") or {}),
             "dimension_weights": weights,
+            "scoring": score_audit or {"architecture": "legacy_v1"},
         },
     }

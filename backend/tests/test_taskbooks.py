@@ -3,7 +3,11 @@
 from types import SimpleNamespace
 
 from app.agents.scheme_review import build_scheme_overall_report, resolve_enabled_agent_order
-from app.services.taskbooks import build_task_book_profile, extract_task_book_text
+from app.services.taskbooks import (
+    build_task_book_profile,
+    extract_requirement_lines,
+    extract_task_book_text,
+)
 
 
 def build_submission(stage: str, grade: str, agents: list[str]):
@@ -37,9 +41,21 @@ def test_task_book_text_and_requirements_change_scheme_weights():
 
     assert profile["has_task_book"] is True
     assert profile["requirements"]
+    assert profile["structured_requirements"]
     assert profile["dimension_weights"]["structure_agent"] < 10
     assert sum(profile["dimension_weights"].values()) == 100
     assert any("降低结构" in reason for reason in profile["weight_reasons"])
+
+
+def test_requirement_extraction_keeps_scale_function_and_drawing_rules():
+    """确认任务书摘要不会漏掉规模、功能和成果图纸等核心条目。"""
+    requirements = extract_requirement_lines(
+        "规模：1200平方米，主体不高于13米。\n"
+        "主要功能：展览、交流和资料收藏。\n"
+        "总平面图1:200，各层平面图1:100，剖面图不少于两个。"
+    )
+
+    assert len(requirements) == 3
 
 
 def test_concept_and_drawing_stages_only_run_matching_agents():

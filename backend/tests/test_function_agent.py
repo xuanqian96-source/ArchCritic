@@ -123,12 +123,15 @@ def test_drawing_description_is_included_in_model_prompts():
         description="剖面重点说明架空层与报告厅的竖向关系。",
     )
     context = build_function_agent_context(submission, [drawing], [])
+    context["task_book_text"] = "课程任务书正文：总平面、各层平面和剖面必须提交。"
 
     function_prompt = build_function_agent_user_prompt(context)
     scheme_prompt = build_specialist_user_prompt(context, SCHEME_SPECIALIST_SPECS["structure_agent"])
 
     assert "图纸说明：剖面重点说明架空层与报告厅的竖向关系。" in function_prompt
     assert "图纸说明：剖面重点说明架空层与报告厅的竖向关系。" in scheme_prompt
+    assert "课程任务书正文：总平面、各层平面和剖面必须提交。" in function_prompt
+    assert "课程任务书正文：总平面、各层平面和剖面必须提交。" in scheme_prompt
 
 
 def test_observed_facts_demote_uncertain_must_fix():
@@ -155,7 +158,8 @@ def test_observed_facts_demote_uncertain_must_fix():
     overall = function_agent_report_to_overall(report, {"description": ""})
 
     assert overall["must_fix"] == []
-    assert "楼梯与设计说明存在冲突" in overall["agent_evaluations"][0]["issues"][0]
+    assert overall["agent_evaluations"][0]["issues"] == []
+    assert "楼梯与设计说明存在冲突" in overall["agent_evaluations"][0]["details"]["uncertain_observations"][0]
 
 
 def test_build_model_error_message_for_quota():

@@ -281,6 +281,26 @@ def test_wiki_loader_accepts_obsidian_dimension_folder(tmp_path):
     assert references[0]["excerpt"] == "入口、门厅和展厅应形成清晰连续的进入过程。"
 
 
+def test_wiki_loader_skips_content_waiting_for_review(tmp_path):
+    """确认待分析或待学科复核内容不会提前进入模型检索。"""
+    case_root = tmp_path / "03优秀案例笔记"
+    case_root.mkdir(parents=True)
+    (case_root / "待复核案例.md").write_text(
+        "---\nstatus: 待学科复核\n---\n\n# 待复核案例\n\n- 未审核内容。\n",
+        encoding="utf-8",
+    )
+    (case_root / "已审核案例.md").write_text(
+        "---\nreview_status: approved\n---\n\n# 已审核案例\n\n- 可用于检索的内容。\n",
+        encoding="utf-8",
+    )
+
+    from app.wiki import load_wiki_references
+
+    references = load_wiki_references(str(tmp_path), "scheme")
+
+    assert [item["title"] for item in references] == ["已审核案例"]
+
+
 def test_feedback_items_only_link_current_report_references():
     """确认反馈只会关联本次报告真实存在的知识编号。"""
     feedback = build_feedback_items(

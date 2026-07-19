@@ -20,8 +20,11 @@ class Settings(BaseSettings):
     llm_agent_timeout_seconds: int = 50
     llm_review_timeout_seconds: int = 285
     llm_image_detail: str = "high"
+    llm_trust_env: bool = True
     llm_max_model_image_bytes: int = 15 * 1024 * 1024
     llm_image_max_side: int = 2048
+    scoring_architecture: str = "legacy_v1"
+    score_calibration_file: str = "../标注基准集/.prepared/evidence_v2_calibration.json"
     database_url: str = "sqlite:///./archcritic.db"
     upload_dir: str = "uploads"
     wiki_dir: str = "../../wiki-test/wiki"

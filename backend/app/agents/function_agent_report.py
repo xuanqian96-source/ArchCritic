@@ -108,7 +108,7 @@ def function_agent_report_to_overall(report: dict, context: dict | None = None) 
     if context:
         report = demote_conflicting_must_fix(report, context)
     sub_scores = report["sub_scores"]
-    issues = report["must_fix"] + report.get("uncertain_observations", [])[:2]
+    issues = report["must_fix"]
     suggestions = report["should_improve"]
     return {
         "overall_score": report["overall_score"],

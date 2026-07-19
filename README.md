@@ -16,6 +16,8 @@
 - 返回一份评图结果，包含总分、摘要、重点问题、建议和分项判断，并动态更新右侧报告；配置 OpenAI、阿里云百炼或 Gemini 后，三个阶段都会调用对应专项 Agent 和综合评审 Agent。
 - 使用阿里云百炼时，系统会先把本地图纸上传为模型可读取的临时 `oss://` URL，再调用 `qwen3.6-plus`，避免 base64 直传图片导致超时。
 - 百炼临时图纸上传带有重试机制；流式输出中断时会自动改用非流式结构化评图兜底。
+- 本地私有基准集支持一键生成匿名逐页输入、运行真实多 Agent 回归、计算教师分误差与语义指标，并导出 CSV、JSON、SVG 图表和论文报告；私有图纸与结果默认不进入 Git。
+- 已实现“任务书规则—结构化证据—确定性评分—教师校准”四层研究架构；四份校准、两份独立盲测已完成。因盲测未能区分高低样本，产品默认暂不启用校准分，避免误导学生。
 - 模型评图会读取全部可用图纸，并优先让模型看到平面图，避免只分析第一张图纸导致误判。
 - 右侧 AI 对话区会显示当前阶段各 Agent 的真实顺序评审进度，评图完成后同步更新报告区。
 - 左侧“开始 AI 评图”旁可以选择本次调用的模型，当前支持千问、Gemini 和演示模式。
@@ -43,6 +45,8 @@
 - 真实模型评图会先要求模型列出图纸事实，再进行评价；输出结构统一为 `observed_facts + sub_scores`，与设计说明或事实识别冲突的内容会降级为不确定观察，避免错误地进入“必须修改”。
 - 前端可通过评图请求参数指定本次模型，后端仍保留 `.env` 作为默认模型配置。
 - 百炼真实评图不再把图片作为 base64 直接传给模型，而是使用百炼临时 OSS 文件 URL；数据库会缓存临时 URL 和过期时间，减少重复上传。
+- `backend/app/benchmarking/` 负责基准数据解析、高清拆页、真实模型调用、统计、图表和科研报告；正式新实验使用“无答案盲跑—结果冻结—独立裁判”流程，评图进程不读取教师分或标注答案。
+- 产品默认使用 `legacy_v1`；`evidence_v2` 为可显式开启的研究模式。研究模式由模型提供证据和 0—4 级判断，数值分由后端固定规则与本地校准器生成，并随报告保存审计信息。
 
 ## 本地运行方法
 
@@ -71,7 +75,10 @@ LLM_PROVIDER=dashscope
 LLM_MODEL=qwen3.6-plus
 DASHSCOPE_API_KEY=你的百炼 API Key
 DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+SCORING_ARCHITECTURE=legacy_v1
 ```
+
+需要复现实验证据层时，可临时改为 `SCORING_ARCHITECTURE=evidence_v2`；当前盲测未通过高低分区分验证，不建议直接用于学生正式评分。
 
 如需启用 Gemini 评图，请在 `backend/.env` 中配置：
 
@@ -128,6 +135,42 @@ npm run build
 cd /mnt/e/claude/论文/ArchCritic/backend
 ./.venv/bin/pytest
 ```
+
+### 私有评分基准
+
+```bash
+cd /mnt/e/claude/论文/ArchCritic/backend
+./.venv/bin/python scripts/benchmark_review.py prepare
+./.venv/bin/python scripts/benchmark_review.py run --round formal-round1 --provider dashscope --model qwen3.6-plus --workers 2
+./.venv/bin/python scripts/benchmark_review.py report --round formal-round1 --model qwen3.6-plus
+./.venv/bin/python scripts/benchmark_review.py export --first formal-round1 --second formal-round2
+./.venv/bin/python scripts/benchmark_review.py evidence-export
+```
+
+上述 `run/report/export` 命令只用于复现 2026-07-17 的历史六样本实验。新开发集、验证集和最终测试必须使用下列严格流程：
+
+```bash
+cd /mnt/e/claude/论文/ArchCritic/backend
+./.venv/bin/python scripts/goal_asset_audit.py
+./.venv/bin/python scripts/benchmark_review.py blind-prepare --source-root ../标注基准集/.prepared --output-root ../标注基准集/.blind-workspace/model-inputs
+./.venv/bin/python scripts/benchmark_review.py blind-run --test-id <冻结测试编号> --input-root ../标注基准集/.blind-workspace/model-inputs
+./.venv/bin/python scripts/benchmark_review.py blind-judge --results-root <冻结结果目录> --private-answers <私有答案文件> --judgments-root <独立裁判目录>
+```
+
+`blind-run` 不接收答案路径；成功结果会写入哈希并冻结，不得因分数不理想重跑。`blind-judge` 只在冻结校验通过后才会读取私有答案。数据字段规范见 `docs/schemas/long-horizon-goal-v1/`。
+
+内容人工复核与知识专项使用下列命令。`apply` 只有在复核表逐条由真实人工确认后才允许执行；当前不要运行正式 `run`：
+
+```bash
+cd /mnt/e/claude/论文/ArchCritic/backend
+./.venv/bin/python scripts/knowledge_content_review.py export
+./.venv/bin/python scripts/knowledge_content_review.py validate
+./.venv/bin/python scripts/knowledge_content_review.py apply --confirm-human-reviewed
+./.venv/bin/python scripts/content_evaluation_status.py status
+./.venv/bin/python scripts/content_evaluation_status.py run
+```
+
+匿名输入、原始结果与论文数据均保存在本地 `标注基准集/`，该目录受 `.gitignore` 保护。
 
 ### 前端测试
 
@@ -192,10 +235,16 @@ npm run dev:check -- "text-[10px] font-extrabold"
 - 新版前端视觉与文字层级设计规范：`DESIGN.md`。
 - Obsidian 知识库与模型调用路线文档：`docs/plans/2026-05-19-obsidian-wiki-knowledge-graph-route.md`。
 - 新版 React 前端交互与后端迁移计划书：`docs/plans/2026-05-31-frontend-v1-interaction-and-backend-migration-plan.md`。
+- 评分可信度与公共建筑知识/案例长程 Goal 任务书：`docs/plans/2026-07-19-archcritic-long-horizon-goal-taskbook.md`。
+- 长程 Goal 资产审计与严格盲测：可机器盘点样本、知识卡、案例、来源和授权；空字段、占位内容、未核验来源和未授权媒体不会计数；支持无答案输入包、一次性盲跑、结果哈希冻结、技术失败留痕和冻结后独立裁判。续跑前会同时核对模型、提示词、任务书、校准文件和评分代码指纹。
+- 公共建筑内容治理：已核验 1 组 OGL 政府设计指南和 2 本 CC BY-NC 开放教材；20 个候选案例均登记了第一方或公共机构来源并形成逐条证据草稿，其中 18 份具备三类以上证据。新增 9 张案例图片已按 CC0 或 CC BY/CC BY-SA 逐图登记许可与哈希，旧有 89 张未授权图片继续隔离；全部内容仍待建筑学复核，因此正式知识卡、案例和问答计数仍为 0。
+- 内容复核与检索验收：已生成 60 张分层知识卡、30 道固定问答、20 个自然语言案例检索任务和 20 个评图问题联动任务，五类问题各 4 个。人工复核包共 150 条，回写前会检查真实复核人、逐条确认和草稿哈希；待分析或待复核内容不会进入模型检索，只有人工批准且媒体许可合格的结构化条目才能激活。
 - 后端与前端基础测试。
+- 六样本真实评分基准：已接入课程任务书，完成两轮固定千问模型测试；支持提示词指纹、MAE/RMSE/相关性、事实准确率、问题召回率、CSV/JSON 数据和 SVG 论文图表导出。
+- 证据优先评分研究：任务书要求可区分强制、弹性、选配和参考；Agent 只交付事实、置信度与 0—4 级判断，后端负责固定换算和教师校准。四份校准与两份盲测数据包位于 `标注基准集/测试报告与论文数据/新版证据校准架构/`。
 
 ## 待办事项
 
-- 按后续开发计划，用真实课程任务书、学生图纸和教师评分完成三阶段回归验收，并建立可重复运行的基准集。
+- 补齐正在制作的中档样本后，冻结当前研究代码，在更大的独立样本上重新验证高、中、低分区分；当前 `evidence_v2` 不升为产品默认。
 - 为扫描版任务书补充 OCR，并继续完善向量检索、知识库质量和多 Agent 评价稳定性。
 - 上云前补充正式数据库迁移、对象存储、HTTPS Cookie、备份恢复和部署脚本；当前本地账户数据不直接视为生产账户体系。

@@ -22,6 +22,7 @@ class OpenAILLMClient(BaseLLMClient):
         extra_body: dict | None = None,
         default_headers: dict | None = None,
         reasoning_effort: str | None = None,
+        trust_env: bool = True,
     ) -> None:
         """初始化 OpenAI 或 OpenAI 兼容客户端。"""
         import httpx
@@ -36,7 +37,7 @@ class OpenAILLMClient(BaseLLMClient):
         self.reasoning_effort = reasoning_effort
         client_options = {
             "api_key": api_key,
-            "http_client": httpx.Client(timeout=timeout_seconds, trust_env=False),
+            "http_client": httpx.Client(timeout=timeout_seconds, trust_env=trust_env),
             "max_retries": 0,
         }
         if base_url:

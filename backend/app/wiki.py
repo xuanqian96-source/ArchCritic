@@ -4,6 +4,8 @@ from pathlib import Path
 import re
 from urllib.parse import quote
 
+from .governed_wiki import collect_governed_references
+
 
 STAGE_ALIASES = {
     "concept": "概念阶段",
@@ -12,6 +14,7 @@ STAGE_ALIASES = {
     "drawing": "图纸阶段",
     "图纸": "图纸阶段",
 }
+APPROVED_CONTENT_STATUSES = {"approved", "已审核", "审核通过", "已通过", "正式"}
 
 
 def resolve_stage(design_stage: str) -> str:
@@ -69,10 +72,18 @@ def collect_wiki_candidates(wiki_root: Path, stage_name: str) -> list[dict]:
             if file_path in seen_paths or should_skip_wiki_file(file_path, wiki_root):
                 continue
             content = file_path.read_text(encoding="utf-8")
+            if content_is_pending_review(content):
+                continue
             references = build_reference_items(file_path, wiki_root, content)
             if references:
                 candidates.extend(references)
                 seen_paths.add(file_path)
+    existing_titles = {item["title"] for item in candidates}
+    candidates.extend(
+        item
+        for item in collect_governed_references(wiki_root, stage_name)
+        if item["title"] not in existing_titles
+    )
     return candidates
 
 
@@ -83,6 +94,21 @@ def should_skip_wiki_file(file_path: Path, wiki_root: Path) -> bool:
         return True
     ignored_roots = {"01索引", "99维护记录"}
     return bool(relative_parts and relative_parts[0] in ignored_roots)
+
+
+def content_is_pending_review(content: str) -> bool:
+    """有审核字段时仅接收明确通过的内容，未设字段的旧稳定内容保持兼容。"""
+    if not content.startswith("---\n"):
+        return False
+    end = content.find("\n---", 4)
+    if end < 0:
+        return True
+    frontmatter = content[4:end]
+    match = re.search(r"(?m)^(?:review_status|status)\s*:\s*['\"]?(.+?)['\"]?\s*$", frontmatter)
+    if not match:
+        return False
+    status = match.group(1).strip().strip("\"'").strip().lower()
+    return status not in APPROVED_CONTENT_STATUSES
 
 
 def resolve_stage_dir(wiki_root: Path, stage_name: str) -> Path:
@@ -345,7 +371,7 @@ def extract_title(content: str) -> str:
 
 def extract_excerpt(content: str) -> str:
     """优先提取可引用观点、评图应用或维度说明。"""
-    lines = [line.strip() for line in content.splitlines()]
+    lines = [line.strip() for line in strip_frontmatter(content).splitlines()]
     for prefix in ("- **可引用观点**：", "- **评图应用**："):
         for line in lines:
             if line.startswith(prefix):

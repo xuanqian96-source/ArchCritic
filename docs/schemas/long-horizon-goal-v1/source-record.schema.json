@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://archcritic.local/schemas/source-record.schema.json",
+  "title": "ArchCritic 来源与授权记录",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["source_id", "source_title", "source_author_or_organization", "source_url_or_file", "publication_or_project_date", "accessed_at", "source_type", "license_or_permission", "allowed_use", "attribution_text", "original_file_hash_or_snapshot_hash", "review_status", "reviewer"],
+  "properties": {
+    "source_id": {"type": "string", "minLength": 1},
+    "source_title": {"type": "string", "minLength": 1},
+    "source_author_or_organization": {"type": "string", "minLength": 1},
+    "source_url_or_file": {"type": "string", "minLength": 1},
+    "publication_or_project_date": {"type": "string", "minLength": 1},
+    "accessed_at": {"type": "string", "format": "date-time"},
+    "source_type": {"enum": ["book", "standard", "government_guidance", "paper", "official_project_page", "media", "course_material", "team_original"]},
+    "license_or_permission": {"type": "string", "minLength": 1},
+    "allowed_use": {"enum": ["internal_only", "demo_allowed", "public_allowed"]},
+    "attribution_text": {"type": "string"},
+    "original_file_hash_or_snapshot_hash": {"type": "string", "minLength": 1},
+    "counts_as_core_source": {"type": "boolean"},
+    "review_status": {"enum": ["draft", "pending", "approved", "rejected"]},
+    "reviewer": {"type": "string", "minLength": 1},
+    "notes": {"type": "string"}
+  }
+}

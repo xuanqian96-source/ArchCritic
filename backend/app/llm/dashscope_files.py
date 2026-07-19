@@ -24,18 +24,23 @@ class DashScopeUploadError(RuntimeError):
 class DashScopeFileClient:
     """负责获取上传策略并把本地文件上传到百炼临时存储。"""
 
-    def __init__(self, api_key: str, model: str, timeout_seconds: int = 90) -> None:
+    def __init__(
+        self, api_key: str, model: str, timeout_seconds: int = 90, trust_env: bool = True
+    ) -> None:
         """保存百炼 API Key、模型名和请求超时。"""
         self.api_key = api_key
         self.model = model
         self.timeout_seconds = timeout_seconds
+        self.trust_env = trust_env
 
     def upload_file(self, file_path: Path, mime_type: str) -> DashScopeUploadResult:
         """上传本地文件并返回模型可访问的 oss:// URL。"""
         last_error: Exception | None = None
         for attempt in range(1, 4):
             try:
-                with httpx.Client(timeout=self.timeout_seconds, trust_env=False) as client:
+                with httpx.Client(
+                    timeout=self.timeout_seconds, trust_env=self.trust_env
+                ) as client:
                     policy = self._get_policy(client)
                     object_key = self._build_object_key(policy["upload_dir"], file_path.name)
                     self._post_file(client, policy, object_key, file_path, mime_type)

@@ -10,6 +10,7 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 from app.models import Attachment, Submission
+from app.services.taskbook_rules import build_structured_requirements
 
 
 MAX_TASK_BOOK_CHARS = 16_000
@@ -161,6 +162,7 @@ def build_task_book_profile(submission: Submission, attachments: list[Attachment
     ]
     full_text = "\n\n".join(text_parts)[:MAX_TASK_BOOK_CHARS]
     requirements = extract_requirement_lines(full_text)
+    structured_requirements = build_structured_requirements(requirements)
     design_stage = getattr(submission, "design_stage", "方案阶段")
     enabled_agents = getattr(submission, "enabled_agents", [])
     project = submission.project
@@ -177,6 +179,7 @@ def build_task_book_profile(submission: Submission, attachments: list[Attachment
         "full_text": full_text,
         "summary": build_task_book_summary(full_text, getattr(project, "building_type", "")),
         "requirements": requirements,
+        "structured_requirements": structured_requirements,
         "dimension_weights": weights,
         "weight_reasons": build_weight_reasons(
             getattr(project, "grade", "") or "", full_text, active_agents, weights
@@ -204,15 +207,20 @@ def extract_requirement_lines(text: str) -> list[str]:
     if not text:
         return []
     candidates = []
+    requirement_pattern = re.compile(
+        r"规模|面积|高度|基地|结构|设备|设施|功能|展览|服务|公共区|附加空间|"
+        r"总平面|平面图|立面图|剖面图|构造图|透视图|模型|成果|图面|比例|"
+        r"要求|应当|需要|须|不得|不应|不少于|至少|必须|评分|设计内容"
+    )
     for line in text.splitlines():
         cleaned = line.strip(" -•\t")
         if not 6 <= len(cleaned) <= 220:
             continue
-        if re.search(r"要求|应当|需要|须|成果|提交|重点|目标|评分|设计内容", cleaned):
+        if requirement_pattern.search(cleaned):
             candidates.append(cleaned)
     if not candidates:
         candidates = [line.strip() for line in text.splitlines() if 12 <= len(line.strip()) <= 160]
-    return list(dict.fromkeys(candidates))[:12]
+    return list(dict.fromkeys(candidates))[:20]
 
 
 def build_task_book_summary(text: str, building_type: str) -> str:
@@ -315,6 +323,7 @@ def build_task_book_snapshot(profile: dict) -> dict:
         "source_files": profile.get("source_files", []),
         "summary": profile.get("summary", ""),
         "requirements": profile.get("requirements", []),
+        "structured_requirements": profile.get("structured_requirements", []),
         "dimension_weights": profile.get("dimension_weights", {}),
         "weight_reasons": profile.get("weight_reasons", []),
     }

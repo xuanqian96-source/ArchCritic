@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://archcritic.local/schemas/benchmark-private-answer.schema.json",
+  "title": "ArchCritic 私有标准答案",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["case_id", "teacher_score", "teacher_score_reason", "teacher_scored_at", "reviewer_type", "acceptable_score_interval", "grade_band", "facts", "must_issues", "optional_issues", "forbidden_issues", "authorization_status", "anonymization_record", "annotation_version", "review_record"],
+  "properties": {
+    "case_id": {"type": "string", "pattern": "^CASE-[A-Z0-9-]+$"},
+    "teacher_score": {"type": "number", "minimum": 0, "maximum": 100},
+    "teacher_score_reason": {"type": "string", "minLength": 1},
+    "teacher_scored_at": {"type": "string", "format": "date-time"},
+    "reviewer_type": {"enum": ["teacher", "teaching_assistant", "experienced_researcher"]},
+    "acceptable_score_interval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["min", "max"],
+      "properties": {
+        "min": {"type": "number", "minimum": 0, "maximum": 100},
+        "max": {"type": "number", "minimum": 0, "maximum": 100}
+      }
+    },
+    "grade_band": {"enum": ["low", "mid", "high"]},
+    "facts": {"type": "array", "items": {"type": "object"}},
+    "must_issues": {"type": "array", "items": {"type": "object"}},
+    "optional_issues": {"type": "array", "items": {"type": "object"}},
+    "forbidden_issues": {"type": "array", "items": {"type": "object"}},
+    "authorization_status": {"type": "string", "minLength": 1},
+    "anonymization_record": {"type": "object"},
+    "annotation_version": {"type": "string", "minLength": 1},
+    "review_record": {"type": ["object", "array"]}
+  }
+}

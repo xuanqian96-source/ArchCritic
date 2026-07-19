@@ -114,6 +114,7 @@ def get_llm_client(
             review_timeout_seconds=settings.llm_review_timeout_seconds,
             max_tokens=settings.llm_max_tokens,
             image_detail=settings.llm_image_detail,
+            trust_env=settings.llm_trust_env,
         )
 
     if resolved_provider == "dashscope":
@@ -133,6 +134,7 @@ def get_llm_client(
             image_detail=settings.llm_image_detail,
             extra_body={"enable_thinking": False},
             default_headers={"X-DashScope-OssResourceResolve": "enable"},
+            trust_env=settings.llm_trust_env,
         )
 
     if resolved_provider == "gemini":
@@ -151,6 +153,7 @@ def get_llm_client(
             max_tokens=settings.llm_max_tokens,
             image_detail=settings.llm_image_detail,
             reasoning_effort="none",
+            trust_env=settings.llm_trust_env,
         )
 
     raise ValueError(f"暂不支持的模型提供方：{resolved_provider}")

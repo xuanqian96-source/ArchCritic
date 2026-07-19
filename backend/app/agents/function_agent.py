@@ -13,6 +13,7 @@ from app.agents.prompts.function_agent_v1 import (
 from app.config import get_settings
 from app.models import Attachment, DrawingFile, Submission
 from app.services.taskbooks import build_task_book_profile
+from app.scoring.calibration import load_calibrator
 from app.agents.function_agent_report import (
     build_agent_evaluation_details,
     clamp_number,
@@ -84,6 +85,10 @@ def build_function_agent_context(
     if not task_book_profile["has_task_book"]:
         missing_information.append("任务书正文不可用，评分只能按建筑类型和设计说明进行。")
 
+    settings = get_settings()
+    calibration_path = Path(settings.score_calibration_file)
+    if not calibration_path.is_absolute():
+        calibration_path = Path(__file__).resolve().parents[2] / calibration_path
     return {
         "project_name": project.name,
         "building_type": project.building_type,
@@ -95,8 +100,11 @@ def build_function_agent_context(
         "task_book_summary": task_book_profile["summary"],
         "task_book_text": task_book_profile["full_text"],
         "task_book_requirements": task_book_profile["requirements"],
+        "structured_requirements": task_book_profile["structured_requirements"],
         "task_book_profile": task_book_profile,
         "dimension_weights": task_book_profile["dimension_weights"],
+        "scoring_architecture": settings.scoring_architecture,
+        "score_calibration": load_calibrator(calibration_path),
         "drawing_scope": build_drawing_scope(drawings),
         "drawings": drawings,
         "references": references[:6],

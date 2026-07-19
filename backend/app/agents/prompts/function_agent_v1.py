@@ -151,6 +151,9 @@ def build_function_agent_user_prompt(context: dict) -> str:
 【任务书要求或摘要】
 {context["task_book_summary"]}
 
+【任务书正文】
+{context.get("task_book_text") or "未提供任务书正文。"}
+
 【任务书明确要求】
 {chr(10).join(f"- {item}" for item in context.get("task_book_requirements", [])) or "未提取到明确条目。"}
 

@@ -10,7 +10,9 @@ from app.agents.scheme_review import (
     create_json_completion,
     generate_scheme_review,
     iter_scheme_review_events,
+    specialist_report_to_evaluation,
 )
+from app.agents.prompts.scheme_agents_v1 import SCHEME_SPECIALIST_SPECS
 from app.config import Settings
 
 
@@ -71,6 +73,31 @@ def test_scheme_review_default_budget_stays_under_five_minutes():
     assert settings.llm_review_timeout_seconds <= 285
 
 
+def test_specialist_uncertainty_is_not_promoted_to_confirmed_issue():
+    """确认专项不确定观察只保留在详情，不进入确定问题列表。"""
+    report = {
+        "overall_score": 80,
+        "summary": "场地关系基本成立。",
+        "strengths": ["入口回应街巷。"],
+        "must_fix": ["主入口缺少必要过渡。"],
+        "should_improve": ["补充室外空间层次。"],
+        "optional_improvements": [],
+        "missing_information": [],
+        "uncertain_observations": ["后勤入口文字较小，暂时无法确认。"],
+        "sub_scores": {},
+        "confidence": "medium",
+        "observed_facts": [],
+    }
+    evaluation = specialist_report_to_evaluation(
+        SCHEME_SPECIALIST_SPECS["site_agent"], report
+    )
+
+    assert evaluation["issues"] == ["主入口缺少必要过渡。"]
+    assert evaluation["details"]["uncertain_observations"] == [
+        "后勤入口文字较小，暂时无法确认。"
+    ]
+
+
 def test_scheme_review_reports_model_length_cutoff():
     """确认模型截断输出时会给出明确错误。"""
     client = SimpleNamespace(
@@ -79,6 +106,19 @@ def test_scheme_review_reports_model_length_cutoff():
 
     with pytest.raises(ModelOutputTruncatedError):
         create_json_completion(client, {"model": "fake"})
+
+
+def test_model_connection_error_is_retried_once():
+    """确认短暂连接错误只重试一次，并能继续解析同一请求。"""
+    completions = RetryOnceCompletions()
+    client = SimpleNamespace(
+        client=SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    )
+
+    result = create_json_completion(client, {"model": "fake"})
+
+    assert result == {"ok": True}
+    assert completions.calls == 2
 
 
 def build_context() -> dict:
@@ -182,6 +222,25 @@ class LengthCutoffCompletions:
                     message=SimpleNamespace(content='{"summary": "未完成"'),
                 )
             ]
+        )
+
+
+class RetryOnceCompletions:
+    """第一次模拟连接错误，第二次返回合法 JSON。"""
+
+    def __init__(self) -> None:
+        """记录调用次数。"""
+        self.calls = 0
+
+    def create(self, **kwargs):
+        """首次抛出同名连接异常，随后成功。"""
+        del kwargs
+        self.calls += 1
+        if self.calls == 1:
+            error_type = type("APIConnectionError", (RuntimeError,), {})
+            raise error_type("temporary")
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content='{"ok": true}'))]
         )
 
 
