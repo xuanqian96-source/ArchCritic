@@ -30,6 +30,10 @@ DIMENSION_KEYWORDS = {
     "concept_agent": ("概念", "创意", "立意", "主题", "叙事", "构思", "空间体验"),
     "drawing_agent": ("图面", "制图", "表达", "排版", "标注", "线型", "图纸完整"),
 }
+SUBSTANTIVE_STRUCTURE_KEYWORDS = (
+    "柱网", "跨度", "构造图", "节点", "梁柱", "承重", "支撑体系",
+    "结构计算", "结构分析", "结构设计", "结构逻辑",
+)
 STAGE_BASE_WEIGHTS = {
     "概念阶段": {
         "site_agent": 25.0,
@@ -253,7 +257,7 @@ def calculate_dimension_weights(
     for agent in deemphasized_agents:
         weights[agent] *= 0.2
     early_grade = any(label in grade for label in ("大一", "大二", "一年级", "二年级"))
-    structure_required = any(keyword in normalized_text for keyword in DIMENSION_KEYWORDS["structure_agent"])
+    structure_required = has_substantive_structure_requirement(normalized_text)
     if early_grade and "structure_agent" in weights and "structure_agent" not in deemphasized_agents and not structure_required:
         weights["structure_agent"] *= 0.35
     if early_grade and "concept_agent" in weights:
@@ -276,7 +280,7 @@ def build_weight_reasons(
     """说明任务书为何改变评分占比，供报告追溯。"""
     reasons = []
     early_grade = any(label in grade for label in ("大一", "大二", "一年级", "二年级"))
-    structure_required = any(keyword in text for keyword in DIMENSION_KEYWORDS["structure_agent"])
+    structure_required = has_substantive_structure_requirement(text)
     deemphasized_agents = get_deemphasized_agents(text, active_agents)
     for agent in deemphasized_agents:
         reasons.append(
@@ -293,6 +297,12 @@ def build_weight_reasons(
                 f"任务书多次涉及{'、'.join(hits[:3])}，{DIMENSION_LABELS[agent]}占比调整为 {weights.get(agent, 0):g}%。"
             )
     return reasons[:6]
+
+
+def has_substantive_structure_requirement(text: str) -> bool:
+    """判断任务书是否真正要求结构设计深度，而非仅列出可选结构材料。"""
+    normalized = str(text or "").lower()
+    return any(keyword.lower() in normalized for keyword in SUBSTANTIVE_STRUCTURE_KEYWORDS)
 
 
 def has_deemphasized_requirement(text: str, dimension_keyword: str) -> bool:

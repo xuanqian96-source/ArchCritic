@@ -203,6 +203,7 @@ def base_reference(
     return {
         "reference_id": "",
         "governance_id": governance_id,
+        "approval_status": "human_approved",
         "title": title,
         "source_type": source_type,
         "excerpt": excerpt,

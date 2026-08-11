@@ -19,6 +19,7 @@ REQUIREMENT_DIMENSION_KEYWORDS = {
         "透视图", "模型", "比例", "标注", "图面", "排版",
     ),
 }
+SCORABLE_REQUIREMENT_LEVELS = {"required", "flexible_required"}
 
 
 def build_structured_requirements(lines: list[str]) -> list[dict]:
@@ -28,7 +29,11 @@ def build_structured_requirements(lines: list[str]) -> list[dict]:
         text = str(raw_line).strip()
         if not text:
             continue
+        verification_mode = infer_verification_mode(text)
         agent_types = infer_requirement_agents(text)
+        if not agent_types:
+            # 数量、规模等跨专项要求由功能 Agent 统一核对，避免每个 Agent 重复判断。
+            agent_types = ["function_agent"]
         requirements.append(
             {
                 "id": f"R-{index:03d}",
@@ -36,7 +41,7 @@ def build_structured_requirements(lines: list[str]) -> list[dict]:
                 "level": infer_requirement_level(text),
                 "dimension": agent_types[0] if agent_types else "general",
                 "agent_types": agent_types,
-                "verification_mode": infer_verification_mode(text),
+                "verification_mode": verification_mode,
             }
         )
     return requirements
@@ -93,6 +98,14 @@ def relevant_requirements(requirements: list[dict], agent_type: str) -> list[dic
     matched = []
     for item in requirements:
         agent_types = item.get("agent_types") or []
-        if item.get("dimension") == "general" or agent_type in agent_types:
+        if agent_type in agent_types:
             matched.append(item)
     return matched[:12]
+
+
+def scorable_requirements(requirements: list[dict]) -> list[dict]:
+    """只返回会影响任务书符合度的强制与弹性要求。"""
+    return [
+        item for item in requirements
+        if item.get("level") in SCORABLE_REQUIREMENT_LEVELS
+    ][:12]

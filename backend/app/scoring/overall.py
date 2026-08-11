@@ -11,6 +11,7 @@ from app.services.taskbooks import calculate_weighted_score
 CONFIDENCE_RANK = {"low": 1, "medium": 2, "high": 3}
 COMPLIANCE_VALUES = {"met": 1.0, "partly_met": 0.65, "not_met": 0.35}
 REQUIREMENT_WEIGHTS = {"required": 1.0, "flexible_required": 0.6}
+COMPLIANCE_SHARE = 0.15
 
 
 def build_evidence_score(
@@ -18,14 +19,23 @@ def build_evidence_score(
     weights: dict[str, float],
     structured_requirements: list[dict],
     calibrator: dict | None,
+    independent_checks: list[dict] | None = None,
 ) -> dict:
     """生成原始质量分、任务书符合分、校准分和不确定区间。"""
     quality_score = calculate_weighted_score(evaluations, weights)
-    requirement_checks = aggregate_requirement_checks(evaluations, structured_requirements)
+    requirement_checks = (
+        validate_independent_checks(independent_checks, structured_requirements)
+        if independent_checks is not None
+        else aggregate_requirement_checks(evaluations, structured_requirements)
+    )
     compliance_score = calculate_compliance_score(requirement_checks)
     raw_score = quality_score
     if compliance_score is not None:
-        raw_score = round(quality_score * 0.9 + compliance_score * 0.1, 1)
+        raw_score = round(
+            quality_score * (1 - COMPLIANCE_SHARE)
+            + compliance_score * COMPLIANCE_SHARE,
+            1,
+        )
     final_score = predict_calibrated_score(raw_score, calibrator)
     half_width = calculate_interval_half_width(evaluations, requirement_checks, calibrator)
     return {
@@ -41,6 +51,59 @@ def build_evidence_score(
         "calibrator_version": (calibrator or {}).get("version", "not_configured"),
         "calibration_sample_count": int((calibrator or {}).get("sample_count", 0)),
         "requirement_checks": requirement_checks,
+        "requirement_audit": build_requirement_audit(
+            requirement_checks, structured_requirements
+        ),
+    }
+
+
+def validate_independent_checks(checks: list[dict], requirements: list[dict]) -> list[dict]:
+    """只接受当前任务书中真实存在的独立核对结果。"""
+    rules = {item["id"]: item for item in requirements}
+    validated = []
+    seen = set()
+    for item in checks or []:
+        requirement_id = str(item.get("requirement_id") or item.get("id") or "")
+        if requirement_id not in rules or requirement_id in seen:
+            continue
+        status = str(item.get("status") or "uncertain")
+        confidence = str(item.get("confidence") or "low")
+        if status not in {*COMPLIANCE_VALUES, "uncertain", "not_applicable"}:
+            status = "uncertain"
+        if confidence not in CONFIDENCE_RANK:
+            confidence = "low"
+        validated.append(
+            {
+                **rules[requirement_id],
+                "status": status,
+                "evidence": str(item.get("evidence") or "")[:220],
+                "confidence": confidence,
+                "evidence_fact_ids": list(item.get("evidence_fact_ids") or [])[:6],
+            }
+        )
+        seen.add(requirement_id)
+    return sorted(validated, key=lambda item: item["id"])
+
+
+def build_requirement_audit(checks: list[dict], requirements: list[dict]) -> dict:
+    """记录任务书规则是否真正得到可靠核对。"""
+    scored_levels = set(REQUIREMENT_WEIGHTS)
+    expected = [item for item in requirements if item.get("level") in scored_levels]
+    checked = [
+        item
+        for item in checks
+        if item.get("level") in scored_levels
+        and item.get("status") in COMPLIANCE_VALUES
+        and item.get("confidence") != "low"
+    ]
+    return {
+        "required_or_flexible_count": len(expected),
+        "confidently_checked_count": len(checked),
+        "confident_check_rate": (
+            round(len(checked) / len(expected), 3) if expected else None
+        ),
+        "missing_or_uncertain_count": max(0, len(expected) - len(checked)),
+        "compliance_share": COMPLIANCE_SHARE,
     }
 
 

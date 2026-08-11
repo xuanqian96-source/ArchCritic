@@ -86,6 +86,10 @@ def build_function_agent_context(
         missing_information.append("任务书正文不可用，评分只能按建筑类型和设计说明进行。")
 
     settings = get_settings()
+    if settings.scoring_architecture == "evidence_v2" and not references:
+        missing_information.append(
+            "当前没有通过人工复核的知识卡；本次只能依据任务书和图纸评分，知识引用为空。"
+        )
     calibration_path = Path(settings.score_calibration_file)
     if not calibration_path.is_absolute():
         calibration_path = Path(__file__).resolve().parents[2] / calibration_path
@@ -107,7 +111,12 @@ def build_function_agent_context(
         "score_calibration": load_calibrator(calibration_path),
         "drawing_scope": build_drawing_scope(drawings),
         "drawings": drawings,
-        "references": references[:6],
+        "references": references[:20],
+        "knowledge_policy": (
+            "human_approved_only"
+            if settings.scoring_architecture == "evidence_v2"
+            else "compatible"
+        ),
         "missing_information": missing_information,
     }
 

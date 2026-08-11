@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.agents.function_agent import build_agent_evaluation_details, build_image_inputs
+from app.agents.function_agent import build_agent_evaluation_details
 from app.agents.prompts.evidence_agents_v2 import (
     EVIDENCE_SPECIALIST_SYSTEM_PROMPT,
     build_evidence_json_schema,
@@ -28,20 +28,23 @@ class EvidenceSpecialistAgent:
 
         prompt, requirements = build_evidence_user_prompt(context, self.spec)
         content = [{"type": "text", "text": prompt}]
-        content.extend(
-            build_image_inputs(context["drawings"], detail=self.llm_client.image_detail)
-        )
         create_kwargs = build_completion_kwargs(
             self.llm_client,
             EVIDENCE_SPECIALIST_SYSTEM_PROMPT,
             content,
             f"{self.spec['agent_type']}_evidence_v2",
-            build_evidence_json_schema(self.spec),
+            build_evidence_json_schema(self.spec, requirements),
             max(self.llm_client.max_tokens, 3200),
             budget_seconds,
         )
         raw_output = create_json_completion(self.llm_client, create_kwargs)
-        report = normalize_evidence_output(self.spec, raw_output, requirements)
+        report = normalize_evidence_output(
+            self.spec,
+            raw_output,
+            requirements,
+            context.get("references", []),
+            context.get("evidence_inventory") or {},
+        )
         return evidence_report_to_evaluation(self.spec, report)
 
 
@@ -53,6 +56,11 @@ def evidence_report_to_evaluation(spec: dict, report: dict) -> dict:
             "evidence_records": report["evidence_records"],
             "criterion_assessments": report["criterion_assessments"],
             "requirement_checks": report["requirement_checks"],
+            "knowledge_uses": report["knowledge_uses"],
+            "invalid_knowledge_reference_ids": report["invalid_knowledge_reference_ids"],
+            "provided_reference_ids": report["provided_reference_ids"],
+            "invalid_evidence_fact_ids": report["invalid_evidence_fact_ids"],
+            "evidence_inventory_version": report["evidence_inventory_version"],
             "score_source": "backend_level_mapping_v1",
         }
     )

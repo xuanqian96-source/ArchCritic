@@ -24,8 +24,14 @@ from app.agents.prompts.scheme_agents_v1 import (
     build_specialist_json_schema,
     build_specialist_user_prompt,
 )
+from app.agents.prompts.visual_score_calibration_v1 import (
+    VISUAL_SCORE_CALIBRATION_JSON_SCHEMA,
+    VISUAL_CALIBRATION_SYSTEM_PROMPT,
+    build_visual_calibration_user_prompt,
+)
 from app.services.taskbooks import build_task_book_snapshot, calculate_weighted_score
 from app.scoring.overall import build_evidence_score
+from app.knowledge_selection import context_for_agent
 
 
 FUNCTION_STEP = {
@@ -84,15 +90,24 @@ def iter_scheme_review_events(llm_client: Any, context: dict) -> Iterator[dict]:
     specialist_evaluations = []
     agent_order = resolve_enabled_agent_order(context)
     use_evidence_v2 = context.get("scoring_architecture") == "evidence_v2"
+    if use_evidence_v2:
+        from app.agents.evidence_inventory import DrawingEvidenceInventoryAgent
+
+        ensure_review_budget(llm_client, started_at)
+        evidence_inventory = DrawingEvidenceInventoryAgent(llm_client).run(
+            context, remaining_seconds(llm_client, started_at)
+        )
+        context = {**context, "evidence_inventory": evidence_inventory}
     for agent_type in [item for item in agent_order if item != "review_agent"]:
         spec = get_agent_spec(agent_type)
+        agent_context = context_for_agent(context, agent_type)
         yield build_agent_event("start", spec, f"开始核对{spec['dimension']}。")
         ensure_review_budget(llm_client, started_at)
         if use_evidence_v2:
             from app.agents.evidence_review import EvidenceSpecialistAgent
 
             evaluation = EvidenceSpecialistAgent(llm_client, agent_type).run(
-                context, remaining_seconds(llm_client, started_at)
+                agent_context, remaining_seconds(llm_client, started_at)
             )
         elif agent_type == "function_agent":
             function_agent = FunctionAgent(
@@ -104,11 +119,11 @@ def iter_scheme_review_events(llm_client: Any, context: dict) -> Iterator[dict]:
                 llm_client.extra_body,
                 llm_client.reasoning_effort,
             )
-            function_report = function_agent.run(context)
-            evaluation = function_agent_report_to_overall(function_report, context)["agent_evaluations"][0]
+            function_report = function_agent.run(agent_context)
+            evaluation = function_agent_report_to_overall(function_report, agent_context)["agent_evaluations"][0]
         else:
             report = SchemeSpecialistAgent(llm_client, spec).run(
-                context, remaining_seconds(llm_client, started_at)
+                agent_context, remaining_seconds(llm_client, started_at)
             )
             evaluation = specialist_report_to_evaluation(spec, report)
         specialist_evaluations.append(evaluation)
@@ -116,6 +131,14 @@ def iter_scheme_review_events(llm_client: Any, context: dict) -> Iterator[dict]:
 
     if not specialist_evaluations:
         raise ValueError("当前阶段至少需要启用一个专项 Agent。")
+    if use_evidence_v2:
+        from app.agents.taskbook_compliance import TaskbookComplianceAgent
+
+        ensure_review_budget(llm_client, started_at)
+        compliance = TaskbookComplianceAgent(llm_client).run(
+            context, remaining_seconds(llm_client, started_at)
+        )
+        context = {**context, "taskbook_compliance": compliance}
     if "review_agent" in agent_order:
         yield build_agent_event("start", REVIEW_STEP, "正在汇总已完成的专项结果并生成反馈报告。")
         ensure_review_budget(llm_client, started_at)
@@ -124,6 +147,14 @@ def iter_scheme_review_events(llm_client: Any, context: dict) -> Iterator[dict]:
             specialist_evaluations,
             remaining_seconds(llm_client, started_at),
         )
+        if context.get("visual_score_anchors"):
+            ensure_review_budget(llm_client, started_at)
+            calibration = VisualScoreCalibrationAgent(llm_client).run(
+                context,
+                specialist_evaluations,
+                remaining_seconds(llm_client, started_at),
+            )
+            synthesis = {**synthesis, "score_calibration": calibration}
         yield build_agent_event("done", REVIEW_STEP, "综合反馈报告已整理完成。")
     else:
         synthesis = build_local_synthesis(specialist_evaluations)
@@ -209,7 +240,9 @@ class ComprehensiveReviewAgent:
         content = [
             {
                 "type": "text",
-                "text": build_comprehensive_user_prompt(context, specialist_evaluations),
+                "text": build_comprehensive_user_prompt(
+                    context, specialist_evaluations
+                ),
             }
         ]
         create_kwargs = build_completion_kwargs(
@@ -221,7 +254,84 @@ class ComprehensiveReviewAgent:
             self.llm_client.max_tokens,
             budget_seconds,
         )
-        return validate_synthesis_output(create_json_completion(self.llm_client, create_kwargs))
+        return validate_synthesis_output(
+            create_json_completion(self.llm_client, create_kwargs)
+        )
+
+
+class VisualScoreCalibrationAgent:
+    """最终评审中的独立视觉尺度校准步骤。"""
+
+    def __init__(self, llm_client: Any) -> None:
+        """保存模型客户端。"""
+        self.llm_client = llm_client
+
+    def run(
+        self,
+        context: dict,
+        specialist_evaluations: list[dict],
+        budget_seconds: float,
+    ) -> dict:
+        """只返回档位、锚点比较和校准总分，避免与反馈长文本竞争输出。"""
+        visual_anchors = context.get("visual_score_anchors") or []
+        content = build_visual_calibration_content(
+            context,
+            specialist_evaluations,
+            self.llm_client.image_detail,
+        )
+        create_kwargs = build_completion_kwargs(
+            self.llm_client,
+            VISUAL_CALIBRATION_SYSTEM_PROMPT,
+            content,
+            "visual_score_calibration",
+            VISUAL_SCORE_CALIBRATION_JSON_SCHEMA,
+            min(self.llm_client.max_tokens, 1400),
+            budget_seconds,
+        )
+        raw_output = create_json_completion(self.llm_client, create_kwargs)
+        return validate_visual_score_calibration(raw_output, visual_anchors)
+
+
+def build_visual_calibration_content(
+    context: dict,
+    specialist_evaluations: list[dict],
+    image_detail: str,
+) -> list[dict]:
+    """按明确标签依次追加当前作品和视觉锚点，防止模型混淆图像身份。"""
+    content = [
+        {
+            "type": "text",
+            "text": build_visual_calibration_user_prompt(
+                context, specialist_evaluations
+            ),
+        },
+        {
+            "type": "text",
+            "text": "【当前待评作品图纸】以下图像均属于当前作品，不含教师成绩。",
+        },
+    ]
+    content.extend(build_image_inputs(context["drawings"], detail=image_detail))
+    content.append(
+        {
+            "type": "text",
+            "text": "【视觉评分锚点】以下作品只用于课程尺度比较。",
+        }
+    )
+    for anchor in context.get("visual_score_anchors") or []:
+        content.append(
+            {
+                "type": "text",
+                "text": (
+                    f"锚点 {anchor['anchor_id']}；档位 {anchor['band']}；"
+                    f"教师原始成绩 {anchor['teacher_score']:g} 分；"
+                    f"匿名题名：{anchor['display_title']}。"
+                ),
+            }
+        )
+        content.extend(
+            build_image_inputs(anchor.get("drawings") or [], detail=image_detail)
+        )
+    return content
 
 
 def build_completion_kwargs(
@@ -340,9 +450,12 @@ def specialist_report_to_evaluation(spec: dict, report: dict) -> dict:
     }
 
 
-def validate_synthesis_output(raw_output: dict) -> dict:
+def validate_synthesis_output(
+    raw_output: dict,
+    visual_anchors: list[dict] | None = None,
+) -> dict:
     """保证综合报告字段完整。"""
-    return {
+    result = {
         "summary": safe_text(raw_output.get("summary"), "已完成当前阶段综合评审。"),
         "must_fix": safe_list(raw_output.get("must_fix"), "", allow_empty=True),
         "should_improve": safe_list(raw_output.get("should_improve"), "建议按专项结果继续深化。"),
@@ -351,6 +464,74 @@ def validate_synthesis_output(raw_output: dict) -> dict:
         ),
         "strengths": safe_list(raw_output.get("strengths"), "方案具备继续深化的基础。"),
     }
+    if visual_anchors:
+        result["score_calibration"] = validate_visual_score_calibration(
+            raw_output.get("score_calibration"),
+            visual_anchors,
+        )
+    return result
+
+
+def validate_visual_score_calibration(
+    raw_calibration: Any,
+    visual_anchors: list[dict],
+) -> dict:
+    """校验最终 Agent 的档位、锚点编号和校准分数，异常时安全回退旧总分。"""
+    allowed_ids = {
+        str(item.get("anchor_id") or "") for item in visual_anchors
+    }
+    if not isinstance(raw_calibration, dict):
+        return {"valid": False, "reason": "模型未返回视觉评分校准结果。"}
+    band = str(raw_calibration.get("band") or "")
+    score = raw_calibration.get("calibrated_score")
+    nearest_ids = [
+        str(item)
+        for item in raw_calibration.get("nearest_anchor_ids") or []
+        if str(item) in allowed_ids
+    ]
+    if (
+        band not in {"low", "middle", "high"}
+        or not isinstance(score, (int, float))
+        or not nearest_ids
+    ):
+        return {"valid": False, "reason": "模型返回的档位、分数或锚点编号无效。"}
+    return {
+        "valid": True,
+        "architecture": "visual_anchor_v1",
+        "observed_current_quality": safe_calibration_evidence(
+            raw_calibration.get("observed_current_quality"),
+            "当前作品整体质量证据不足。",
+        ),
+        "band": band,
+        "nearest_anchor_ids": nearest_ids[:3],
+        "comparisons": safe_calibration_evidence(
+            raw_calibration.get("comparisons"),
+            "模型未提供完整的锚点比较依据。",
+        ),
+        "calibrated_score": round(clamp_number(score, 0, 100), 1),
+        "confidence": safe_text(raw_calibration.get("confidence"), "medium"),
+        "score_reason": safe_text(
+            raw_calibration.get("score_reason"),
+            "依据当前图纸、专项结果和课程视觉锚点综合定位。",
+        ),
+    }
+
+
+def safe_calibration_evidence(value: Any, fallback: str) -> list[str]:
+    """保留视觉校准返回的文本或结构化比较证据。"""
+    if isinstance(value, dict):
+        return [json.dumps(value, ensure_ascii=False)]
+    if isinstance(value, list):
+        items = [
+            json.dumps(item, ensure_ascii=False)
+            if isinstance(item, dict)
+            else str(item).strip()
+            for item in value
+            if isinstance(item, dict) or str(item).strip()
+        ]
+        if items:
+            return items[:5]
+    return [fallback]
 
 
 def build_local_synthesis(specialist_evaluations: list[dict]) -> dict:
@@ -372,6 +553,7 @@ def build_scheme_overall_report(
     """按任务书动态权重合并专项分数和综合报告。"""
     evaluation_context = context or {}
     weights = evaluation_context.get("dimension_weights") or {}
+    raw_weighted_score = calculate_weighted_score(specialist_evaluations, weights)
     score_audit = None
     if evaluation_context.get("scoring_architecture") == "evidence_v2":
         score_audit = build_evidence_score(
@@ -379,10 +561,27 @@ def build_scheme_overall_report(
             weights,
             evaluation_context.get("structured_requirements") or [],
             evaluation_context.get("score_calibration"),
+            (evaluation_context.get("taskbook_compliance") or {}).get("checks"),
         )
         overall_score = score_audit["calibrated_score"]
+    elif evaluation_context.get("visual_score_anchors"):
+        calibration = synthesis.get("score_calibration") or {
+            "valid": False,
+            "reason": "未执行视觉评分校准步骤。",
+        }
+        overall_score = (
+            calibration["calibrated_score"]
+            if calibration.get("valid")
+            else raw_weighted_score
+        )
+        score_audit = {
+            **calibration,
+            "architecture": "visual_anchor_v1",
+            "raw_weighted_score": raw_weighted_score,
+            "anchor_count": len(evaluation_context.get("visual_score_anchors") or []),
+        }
     else:
-        overall_score = calculate_weighted_score(specialist_evaluations, weights)
+        overall_score = raw_weighted_score
     review_evaluation = {
         "agent_type": REVIEW_STEP["agent_type"],
         "dimension": REVIEW_STEP["dimension"],
@@ -412,5 +611,65 @@ def build_scheme_overall_report(
             "task_book": build_task_book_snapshot(evaluation_context.get("task_book_profile") or {}),
             "dimension_weights": weights,
             "scoring": score_audit or {"architecture": "legacy_v1"},
+            "knowledge_audit": build_knowledge_audit(specialist_evaluations),
+            "knowledge_references": build_knowledge_reference_snapshot(
+                evaluation_context.get("references") or []
+            ),
+            "evidence_inventory": evaluation_context.get("evidence_inventory") or {},
+            "taskbook_compliance": evaluation_context.get("taskbook_compliance") or {},
         },
     }
+
+
+def build_knowledge_audit(evaluations: list[dict]) -> dict:
+    """汇总每个专项收到和实际使用的知识编号，供历史报告追溯。"""
+    by_agent = []
+    provided = set()
+    used = set()
+    invalid = set()
+    for evaluation in evaluations:
+        details = evaluation.get("details") or {}
+        provided_ids = [str(item) for item in details.get("provided_reference_ids") or []]
+        used_ids = [
+            str(item.get("reference_id"))
+            for item in details.get("knowledge_uses") or []
+            if item.get("reference_id")
+        ]
+        invalid_ids = [
+            str(item) for item in details.get("invalid_knowledge_reference_ids") or []
+        ]
+        provided.update(provided_ids)
+        used.update(used_ids)
+        invalid.update(invalid_ids)
+        by_agent.append(
+            {
+                "agent_type": evaluation.get("agent_type", ""),
+                "provided_reference_ids": provided_ids,
+                "used_reference_ids": used_ids,
+                "invalid_reference_ids": invalid_ids,
+            }
+        )
+    return {
+        "provided_reference_ids": sorted(provided),
+        "used_reference_ids": sorted(used),
+        "invalid_reference_ids": sorted(invalid),
+        "by_agent": by_agent,
+    }
+
+
+def build_knowledge_reference_snapshot(references: list[dict]) -> list[dict]:
+    """保存本轮实际可用知识的最小快照，避免后续更新导致实验不可复核。"""
+    return [
+        {
+            "reference_id": str(item.get("reference_id") or ""),
+            "governance_id": str(item.get("governance_id") or ""),
+            "title": str(item.get("title") or ""),
+            "source_type": str(item.get("source_type") or ""),
+            "dimension": str(item.get("dimension") or ""),
+            "excerpt": str(item.get("excerpt") or "")[:500],
+            "path": str(item.get("path") or ""),
+            "approval_status": str(item.get("approval_status") or ""),
+            "applicable_agents": list(item.get("applicable_agents") or []),
+        }
+        for item in references[:24]
+    ]

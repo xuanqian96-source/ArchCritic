@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.llm.dashscope_files import DashScopeUploadError
 from app.models import AgentEvaluation, OverallReport, ReportReference, Submission
+from app.knowledge_selection import prepare_reference_bundle
 from app.schemas import OverallReportRead
 from app.wiki import load_wiki_references
 
@@ -194,9 +195,10 @@ def load_report_reference_snapshots(db: Session, submission_id: int) -> list[dic
 def load_submission_wiki_references(wiki_dir: str, submission: Submission) -> list[dict]:
     """根据提交上下文从完整 Wiki 中检索相关知识依据。"""
     project = submission.project
-    return load_wiki_references(
+    references = load_wiki_references(
         wiki_dir,
         submission.design_stage,
+        limit=40,
         query_context={
             "project_name": project.name,
             "building_type": project.building_type,
@@ -204,6 +206,13 @@ def load_submission_wiki_references(wiki_dir: str, submission: Submission) -> li
             "description": submission.description,
             "drawing_types": [item.drawing_type for item in submission.drawing_files],
         },
+    )
+    settings = get_settings()
+    return prepare_reference_bundle(
+        references,
+        submission.design_stage,
+        list(getattr(submission, "enabled_agents", []) or []),
+        human_approved_only=settings.scoring_architecture == "evidence_v2",
     )
 
 

@@ -63,6 +63,67 @@ def test_evidence_layer_accepts_named_assessment_list_from_json_mode() -> None:
     assert report["overall_score"] == 78
 
 
+def test_high_level_requires_cross_drawing_direct_evidence() -> None:
+    """确认单一或不可核实证据不能被后端保留为优秀等级。"""
+    payload = build_evidence_payload("R-001")
+    payload["criterion_assessments"]["功能满足"].update(
+        {
+            "level": 4,
+            "confidence": "high",
+            "scope_status": "verified",
+            "evidence": "首层平面图显示门厅。",
+        }
+    )
+    payload["criterion_assessments"]["功能分区"].update(
+        {
+            "level": 4,
+            "confidence": "high",
+            "scope_status": "verified",
+            "evidence": "board_01 平面与 board_02 剖面相互印证。",
+        }
+    )
+    report = normalize_evidence_output(FUNCTION_EVIDENCE_SPEC, payload, [])
+
+    assert report["criterion_assessments"]["功能满足"]["level"] == 3
+    assert report["criterion_assessments"]["功能分区"]["level"] == 4
+
+
+def test_knowledge_audit_rejects_fake_ids_and_limits_case_effect() -> None:
+    """确认模型自造编号会被剔除，案例只保留为背景启发。"""
+    payload = build_evidence_payload("R-001")
+    payload["knowledge_uses"] = [
+        {
+            "reference_id": "K1",
+            "criterion": "功能满足",
+            "use_type": "rubric_support",
+            "claim": "案例显示入口可形成连续空间。",
+            "effect": "support",
+        },
+        {
+            "reference_id": "K99",
+            "criterion": "功能满足",
+            "use_type": "rubric_support",
+            "claim": "不存在的知识。",
+            "effect": "support",
+        },
+    ]
+    payload["criterion_assessments"]["功能满足"]["knowledge_reference_ids"] = [
+        "K1",
+        "K99",
+    ]
+    report = normalize_evidence_output(
+        FUNCTION_EVIDENCE_SPEC,
+        payload,
+        [],
+        [{"reference_id": "K1", "source_type": "案例"}],
+    )
+
+    assert report["knowledge_uses"][0]["effect"] == "context_only"
+    assert report["knowledge_uses"][0]["use_type"] == "case_inspiration"
+    assert report["invalid_knowledge_reference_ids"] == ["K99"]
+    assert report["criterion_assessments"]["功能满足"]["knowledge_reference_ids"] == ["K1"]
+
+
 def test_optional_and_uncertain_requirements_do_not_reduce_total() -> None:
     """确认选配项与不确定项不会进入任务书符合度扣分。"""
     rules = build_structured_requirements(
@@ -148,7 +209,21 @@ def test_evidence_v2_runs_full_scheme_chain_without_model_numeric_scores() -> No
     assert report["agent_evaluations"][0]["details"]["score_source"] == (
         "backend_level_mapping_v1"
     )
-    assert len(client.client.chat.completions.calls) == 5
+    assert len(client.client.chat.completions.calls) == 6
+    image_counts = [
+        len(
+            [
+                item
+                for item in call["messages"][1]["content"]
+                if item.get("type") == "image_url"
+            ]
+        )
+        for call in client.client.chat.completions.calls
+    ]
+    assert image_counts == [1, 0, 0, 0, 0, 0]
+    assert report["evaluation_context"]["evidence_inventory"]["version"] == (
+        "drawing_evidence_inventory_v1"
+    )
 
 
 def build_evidence_payload(requirement_id: str) -> dict:
@@ -165,6 +240,9 @@ def build_evidence_payload(requirement_id: str) -> dict:
                 "reason": "主要关系成立。",
                 "evidence": "首层平面与设计说明相互印证。",
                 "confidence": "medium",
+                "scope_status": "partly_verified",
+                "knowledge_reference_ids": [],
+                "evidence_fact_ids": [],
             }
             for name in FUNCTION_EVIDENCE_SPEC["sub_scores"]
         },
@@ -176,6 +254,7 @@ def build_evidence_payload(requirement_id: str) -> dict:
                 "confidence": "high",
             }
         ],
+        "knowledge_uses": [],
         "must_fix": [
             {"text": "货梯缺失。", "evidence": "图纸未见。", "confidence": "medium"}
         ],
@@ -243,7 +322,18 @@ def build_scheme_context() -> dict:
         "scoring_architecture": "evidence_v2",
         "score_calibration": None,
         "drawing_scope": "仅用于自动化测试。",
-        "drawings": [],
+        "drawings": [
+            {
+                "drawing_type": "plan",
+                "original_name": "test-plan.png",
+                "description": "自动化测试平面图",
+                "analysis_purpose": "功能与流线",
+                "model_file_url": "oss://test-plan.png",
+                "file_url": "/uploads/test-plan.png",
+                "mime_type": "image/png",
+                "usable_for_model": True,
+            }
+        ],
         "references": [],
         "missing_information": [],
         "enabled_agents": [],
@@ -268,13 +358,13 @@ class FakeEvidenceLLMClient:
 
 
 class FakeEvidenceCompletions:
-    """依次返回四个证据专项和一个综合报告。"""
+    """依次返回共享事实、四个证据专项和一个综合报告。"""
 
     criteria_by_call = {
-        1: ["功能满足", "功能分区", "流线分析", "平面丰富性"],
-        2: ["场地解读", "总图组织", "入口与到达", "环境回应"],
-        3: ["形体生成", "空间构图", "几何秩序", "形式功能协同"],
-        4: ["结构体系", "跨度与支撑", "构造可行性", "结构空间协同"],
+        2: ["功能满足", "功能分区", "流线分析", "平面丰富性"],
+        3: ["场地解读", "总图组织", "入口与到达", "环境回应"],
+        4: ["形体生成", "空间构图", "几何秩序", "形式功能协同"],
+        5: ["结构体系", "跨度与支撑", "构造可行性", "结构空间协同"],
     }
 
     def __init__(self) -> None:
@@ -285,7 +375,14 @@ class FakeEvidenceCompletions:
         """按调用位置返回合法 JSON。"""
         self.calls.append(kwargs)
         index = len(self.calls)
-        if index == 5:
+        if index == 1:
+            payload = {
+                "drawing_coverage": [],
+                "facts": [],
+                "contradictions": [],
+                "missing_information": ["自动化测试未提供真实图纸。"],
+            }
+        elif index == 6:
             payload = {
                 "summary": "专项证据已汇总。",
                 "must_fix": [],
@@ -306,10 +403,14 @@ class FakeEvidenceCompletions:
                         "reason": "主要关系成立。",
                         "evidence": "测试图纸。",
                         "confidence": "medium",
+                        "scope_status": "partly_verified",
+                        "knowledge_reference_ids": [],
+                        "evidence_fact_ids": [],
                     }
                     for name in self.criteria_by_call[index]
                 },
                 "requirement_checks": [],
+                "knowledge_uses": [],
                 "must_fix": [],
                 "should_improve": ["继续深化。"],
                 "optional_improvements": ["可补充表达。"],

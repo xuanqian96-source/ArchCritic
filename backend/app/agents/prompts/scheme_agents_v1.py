@@ -277,6 +277,10 @@ def build_specialist_user_prompt(context: dict, spec: dict) -> str:
 {context.get("dimension_weights", {}).get(spec["agent_type"], 0):g}%
 评分时优先服从任务书深度和当前年级要求；任务书没有要求的高阶内容不得作为主要扣分依据。
 
+【课程分档锚点】
+{context.get("score_band_guidance") or "未提供额外分档锚点，按任务书和当前年级独立判断。"}
+分档锚点只用于统一课程评分尺度，不代表当前作品的已知档位，不得据此猜测当前样本答案。
+
 【设计说明】
 {context["description"]}
 
@@ -326,9 +330,11 @@ def build_comprehensive_user_prompt(context: dict, specialist_evaluations: list[
             "strengths": item["strengths"][:3],
             "issues": item["issues"][:4],
             "suggestions": item["suggestions"][:4],
+            "knowledge_uses": (item.get("details") or {}).get("knowledge_uses", [])[:4],
         }
         for item in specialist_evaluations
     ]
+    compliance = context.get("taskbook_compliance") or {}
     return f"""
 请把以下当前设计阶段专项评审结果整理为正式反馈报告。
 
@@ -341,10 +347,15 @@ def build_comprehensive_user_prompt(context: dict, specialist_evaluations: list[
 【专项结果】
 {json.dumps(compact_reviews, ensure_ascii=False, indent=2)}
 
+【独立任务书核对】
+{json.dumps(compliance.get('checks') or [], ensure_ascii=False, indent=2)}
+仅把高置信 not_met 列为确定问题；uncertain 只能写为待补充信息。
+
 【输出结构】
 只输出 JSON/json 对象：
 写成报告摘要，不重复粘贴专项 Agent 的长段原文。
 关键问题与建议如果有知识依据编号，保留 [K1] 这类编号。
+专项结果中的 knowledge_uses 只表示该知识真实参与了评价标准或边界判断；引用时必须保留对应 [K编号]，不得自造编号，也不得把案例当作数值评分模板。
 {{
   "summary": "覆盖本次已执行专项视角的总体反馈摘要",
   "must_fix": ["会阻碍方案继续深化的确定问题"],
