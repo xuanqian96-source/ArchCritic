@@ -127,6 +127,8 @@ def collect_relevant_files(project_root: Path) -> list[Path]:
             project_root / "backend" / "app" / "services" / "taskbooks.py",
             project_root / "backend" / "app" / "services" / "taskbook_rules.py",
             project_root / "backend" / "app" / "wiki.py",
+            project_root / "backend" / "app" / "governed_wiki.py",
+            project_root / "backend" / "app" / "knowledge_selection.py",
             project_root / "backend" / "scripts" / "benchmark_review.py",
             project_root / "docs" / "plans" / "2026-07-19-archcritic-long-horizon-goal-taskbook.md",
         )

@@ -113,6 +113,7 @@ def test_resume_rejects_changed_code_or_calibration() -> None:
         "calibration_sha256": "old-calibration",
         "prompt_fingerprint": "prompt-hash",
         "review_code_fingerprint": "old-code",
+        "knowledge_fingerprint": "old-knowledge",
         "case_ids": ["CASE-A01"],
     }
     with pytest.raises(ValueError, match="calibration_sha256.*review_code_fingerprint"):
@@ -127,4 +128,5 @@ def test_resume_rejects_changed_code_or_calibration() -> None:
             "taskbook-hash",
             "new-calibration",
             "new-code",
+            "new-knowledge",
         )

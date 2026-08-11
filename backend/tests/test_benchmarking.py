@@ -13,14 +13,14 @@ from app.services.taskbooks import STAGE_BASE_WEIGHTS
 
 
 DATASET_ROOT = Path(__file__).resolve().parents[2] / "标注基准集"
+PRIVATE_CASES = load_benchmark_cases(DATASET_ROOT) if DATASET_ROOT.is_dir() else []
 
 
-@pytest.mark.skipif(not DATASET_ROOT.is_dir(), reason="本地私有基准集未提供")
+@pytest.mark.skipif(not PRIVATE_CASES, reason="本地私有基准样本未提供")
 def test_private_dataset_is_anonymous_and_complete() -> None:
     """确认六份私有样本输入不含教师答案和原样本编号。"""
-    cases = load_benchmark_cases(DATASET_ROOT)
-    assert len(cases) == 6
-    for case in cases:
+    assert len(PRIVATE_CASES) == 6
+    for case in PRIVATE_CASES:
         model_input = case.build_input()
         encoded = json.dumps(model_input, ensure_ascii=False)
         assert case.sample_id not in encoded
@@ -30,10 +30,10 @@ def test_private_dataset_is_anonymous_and_complete() -> None:
         assert "score_ranges" not in model_input
 
 
-@pytest.mark.skipif(not DATASET_ROOT.is_dir(), reason="本地私有基准集未提供")
+@pytest.mark.skipif(not PRIVATE_CASES, reason="本地私有基准样本未提供")
 def test_human_intervals_are_calibrated_to_teacher_scores() -> None:
     """确认校准后的人工区间加权中点与教师分数接近。"""
-    for case in load_benchmark_cases(DATASET_ROOT):
+    for case in PRIVATE_CASES:
         weights = STAGE_BASE_WEIGHTS[case.design_stage]
         midpoint = sum(
             ((case.score_ranges[key]["min"] + case.score_ranges[key]["max"]) / 2)

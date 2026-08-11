@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import tempfile
 
 from app.benchmarking.dataset import BenchmarkCase, load_benchmark_cases
 from app.services.taskbooks import (
@@ -102,22 +103,32 @@ def prepare_case(case: BenchmarkCase, case_root: Path, force: bool) -> dict:
 
 def prepare_drawing_files(case: BenchmarkCase, drawings_root: Path, force: bool) -> list[Path]:
     """把 PDF 转成高质量 PNG，并复制原始图片。"""
+    drawings_root.mkdir(parents=True, exist_ok=True)
     sources = sorted((case.source_dir / "图纸").iterdir())
     prepared = []
     board_number = 1
     for source in sources:
         if source.suffix.lower() == ".pdf":
-            prefix = drawings_root / "rendered"
-            existing = sorted(drawings_root.glob("board_*.png"))
+            existing = sorted(
+                path
+                for path in drawings_root.glob("board_*")
+                if path.suffix.lower() in {".png", ".jpg", ".jpeg"}
+            )
             if force or not existing:
-                completed = render_pdf(source, prefix)
-                if completed.returncode != 0:
-                    raise RuntimeError(f"PDF 拆页失败：{source.name}：{completed.stderr[:200]}")
-                for rendered in sorted(drawings_root.glob("rendered-*.png")):
-                    target = drawings_root / f"board_{board_number:02d}.png"
-                    rendered.replace(target)
-                    prepared.append(target)
-                    board_number += 1
+                with tempfile.TemporaryDirectory(prefix="archcritic-render-") as temp_dir:
+                    prefix = Path(temp_dir) / "rendered"
+                    completed = render_pdf(source, prefix)
+                    if completed.returncode != 0:
+                        raise RuntimeError(
+                            f"PDF 拆页失败：{source.name}：{completed.stderr[:200]}"
+                        )
+                    for rendered in sorted(Path(temp_dir).glob("rendered-*")):
+                        target = drawings_root / (
+                            f"board_{board_number:02d}{rendered.suffix.lower()}"
+                        )
+                        shutil.copy2(rendered, target)
+                        prepared.append(target)
+                        board_number += 1
             else:
                 prepared.extend(existing)
                 board_number = len(existing) + 1
@@ -132,19 +143,15 @@ def prepare_drawing_files(case: BenchmarkCase, drawings_root: Path, force: bool)
 
 
 def render_pdf(source: Path, prefix: Path) -> subprocess.CompletedProcess[str]:
-    """按 180 DPI 拆页，并限制异常大画布的最长边，避免无效超大文件。"""
-    command = ["pdftoppm", "-png"]
-    if has_oversized_page_canvas(source):
-        command.extend(["-scale-to", "6000"])
-    else:
-        command.extend(["-r", "180"])
+    """把展板拆成最长边 3000 像素的高质量 JPEG，兼顾识别与运行成本。"""
+    command = ["pdftocairo", "-jpeg", "-jpegopt", "quality=95", "-scale-to", "3000"]
     command.extend([str(source), str(prefix)])
     return subprocess.run(
         command,
         capture_output=True,
         text=True,
         check=False,
-        timeout=300,
+        timeout=900,
     )
 
 

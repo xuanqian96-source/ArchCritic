@@ -14,6 +14,7 @@ from app.agents.image_payload import build_model_image_data_url
 from app.config import get_settings
 from app.llm.client import get_llm_client
 from app.llm.dashscope_files import DashScopeFileClient
+from app.knowledge_selection import prepare_reference_bundle
 from app.services.taskbooks import (
     STAGE_BASE_WEIGHTS,
     build_weight_reasons,
@@ -21,6 +22,7 @@ from app.services.taskbooks import (
 )
 from app.services.taskbook_rules import build_structured_requirements
 from app.scoring.calibration import load_calibrator
+from app.scoring.visual_anchors import build_visual_anchor_context
 from app.wiki import load_wiki_references
 
 
@@ -108,6 +110,7 @@ def prepare_model_urls(
     selected: list[dict],
     provider: str,
     model: str,
+    extra_files: list[dict[str, Any]] | None = None,
 ) -> dict[str, str]:
     """为百炼准备临时 OSS 地址，避免以 base64 发送正式图纸。"""
     if provider != "dashscope":
@@ -122,26 +125,39 @@ def prepare_model_urls(
         settings.llm_trust_env,
     )
     resolved = {}
+
+    def resolve_file(path: Path, mime_type: str, label: str) -> None:
+        """复用同一缓存上传一张当前图纸或视觉锚点。"""
+        key = str(path.resolve())
+        signature = f"{path.stat().st_size}:{path.stat().st_mtime_ns}"
+        cached = cache["items"].get(key, {})
+        if cached.get("signature") == signature and not cache_expired(
+            cached.get("expires_at")
+        ):
+            resolved[key] = cached["url"]
+            return
+        uploaded = client.upload_file(path, mime_type)
+        cache["items"][key] = {
+            "signature": signature,
+            "url": uploaded.url,
+            "expires_at": uploaded.expires_at.isoformat(),
+        }
+        resolved[key] = uploaded.url
+        write_json(cache_file, cache)
+        print(f"已准备模型图纸：{label}/{path.name}", flush=True)
+
     for item in selected:
         input_file = prepared_root / item["input_file"]
         case_input = read_json(input_file)
         for drawing in case_input["drawings"]:
             path = input_file.parent / drawing["relative_path"]
-            key = str(path.resolve())
-            signature = f"{path.stat().st_size}:{path.stat().st_mtime_ns}"
-            cached = cache["items"].get(key, {})
-            if cached.get("signature") == signature and not cache_expired(cached.get("expires_at")):
-                resolved[key] = cached["url"]
-                continue
-            uploaded = client.upload_file(path, drawing["mime_type"])
-            cache["items"][key] = {
-                "signature": signature,
-                "url": uploaded.url,
-                "expires_at": uploaded.expires_at.isoformat(),
-            }
-            resolved[key] = uploaded.url
-            write_json(cache_file, cache)
-            print(f"已准备模型图纸：{item['case_id']}/{path.name}", flush=True)
+            resolve_file(path, drawing["mime_type"], str(item["case_id"]))
+    for item in extra_files or []:
+        resolve_file(
+            Path(item["path"]).resolve(),
+            str(item.get("mime_type") or "image/jpeg"),
+            str(item.get("label") or "视觉锚点"),
+        )
     return resolved
 
 
@@ -190,6 +206,8 @@ def build_context(
     taskbook: dict,
     architecture: str = "legacy_v1",
     calibrator: dict | None = None,
+    include_knowledge: bool = True,
+    visual_anchor_root: Path | None = None,
 ) -> dict:
     """构造与产品真实评图相同字段的模型上下文。"""
     stage = case_input["design_stage"]
@@ -197,16 +215,25 @@ def build_context(
     taskbook_text = taskbook.get("full_text", "")
     weights = calculate_dimension_weights(stage, "大二", taskbook_text, active_agents)
     drawing_types = [item["drawing_type"] for item in case_input["drawings"]]
-    references = load_wiki_references(
-        get_settings().wiki_dir,
+    references = []
+    if include_knowledge:
+        references = load_wiki_references(
+            get_settings().wiki_dir,
+            stage,
+            limit=40,
+            query_context={
+                "project_name": case_input["project_name"],
+                "building_type": case_input["building_type"],
+                "design_stage": stage,
+                "description": case_input["description"],
+                "drawing_types": drawing_types,
+            },
+        )
+    references = prepare_reference_bundle(
+        references,
         stage,
-        query_context={
-            "project_name": case_input["project_name"],
-            "building_type": case_input["building_type"],
-            "design_stage": stage,
-            "description": case_input["description"],
-            "drawing_types": drawing_types,
-        },
+        active_agents,
+        human_approved_only=architecture == "evidence_v2",
     )
     drawings = []
     for item in case_input["drawings"]:
@@ -235,6 +262,15 @@ def build_context(
     structured_requirements = taskbook.get("structured_requirements") or (
         build_structured_requirements(requirements)
     )
+    visual_score_anchors = (
+        build_visual_anchor_context(
+            visual_anchor_root,
+            upload_cache,
+            provider,
+        )
+        if visual_anchor_root
+        else []
+    )
     return {
         "project_name": case_input["project_name"],
         "building_type": case_input["building_type"],
@@ -261,11 +297,21 @@ def build_context(
         "structured_requirements": structured_requirements,
         "scoring_architecture": architecture,
         "score_calibration": calibrator,
+        "score_band_guidance": case_input.get("score_band_guidance", ""),
+        "visual_score_anchors": visual_score_anchors,
         "drawing_scope": "已提供本次成果的全部展板，模型必须综合读取全部页面。",
         "drawings": drawings,
         "references": references,
-        "missing_information": [] if has_taskbook else [
-            "未提供原始课程任务书，任务书符合性不能作为确定结论。"
+        "knowledge_policy": (
+            "human_approved_only" if architecture == "evidence_v2" else "compatible"
+        ),
+        "missing_information": [
+            *([] if has_taskbook else [
+                "未提供原始课程任务书，任务书符合性不能作为确定结论。"
+            ]),
+            *([] if architecture != "evidence_v2" or references else [
+                "当前没有通过人工复核的知识卡；本次只能依据任务书和图纸评分，知识引用为空。"
+            ]),
         ],
     }
 
@@ -357,14 +403,27 @@ def cache_expired(value: str | None) -> bool:
 
 def calculate_prompt_fingerprint(architecture: str = "legacy_v1") -> str:
     """记录本轮实际提示词文件摘要，便于确认两轮是否真正发生变化。"""
-    prompts_root = Path(__file__).resolve().parents[1] / "agents" / "prompts"
+    agents_root = Path(__file__).resolve().parents[1] / "agents"
+    prompts_root = agents_root / "prompts"
     digest = hashlib.sha256()
-    active_prompt_files = ["function_agent_v1.py", "scheme_agents_v1.py"]
+    active_prompt_files = [
+        prompts_root / "function_agent_v1.py",
+        prompts_root / "scheme_agents_v1.py",
+    ]
     if architecture == "evidence_v2":
-        active_prompt_files.append("evidence_agents_v2.py")
-    for name in active_prompt_files:
-        path = prompts_root / name
-        digest.update(path.name.encode("utf-8"))
+        active_prompt_files.extend(
+            [
+                prompts_root / "evidence_agents_v2.py",
+                agents_root / "evidence_inventory.py",
+                agents_root / "taskbook_compliance.py",
+            ]
+        )
+    if architecture == "visual_anchor_v1":
+        active_prompt_files.append(
+            prompts_root / "visual_score_calibration_v1.py"
+        )
+    for path in active_prompt_files:
+        digest.update(str(path.relative_to(agents_root)).encode("utf-8"))
         digest.update(path.read_bytes())
     return digest.hexdigest()[:16]
 

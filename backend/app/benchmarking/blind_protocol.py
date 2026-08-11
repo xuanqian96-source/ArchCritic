@@ -22,6 +22,8 @@ from app.benchmarking.runner import (
 )
 from app.llm.client import get_llm_client
 from app.scoring.calibration import load_calibrator
+from app.config import get_settings
+from app.wiki import resolve_wiki_root
 
 
 FORBIDDEN_ANSWER_FILE_WORDS = (
@@ -159,6 +161,7 @@ def run_blind_round(
         project_root,
         collect_relevant_files(project_root),
     )
+    knowledge_fingerprint = calculate_knowledge_fingerprint()
 
     existing = {
         path.stem for path in results_root.glob("CASE-*.json") if path.is_file()
@@ -176,6 +179,7 @@ def run_blind_round(
         "architecture": architecture,
         "prompt_fingerprint": calculate_prompt_fingerprint(architecture),
         "review_code_fingerprint": review_code_fingerprint,
+        "knowledge_fingerprint": knowledge_fingerprint,
         "input_index_sha256": validation["index_sha256"],
         "taskbook_sha256": taskbook_sha256,
         "calibration_sha256": calibration_sha256,
@@ -196,6 +200,7 @@ def run_blind_round(
         taskbook_sha256,
         calibration_sha256,
         review_code_fingerprint,
+        knowledge_fingerprint,
     )
     write_json(manifest_file, manifest)
     calibrator = load_calibrator(calibration_file)
@@ -390,8 +395,9 @@ def assert_manifest_matches(
     taskbook_sha256: str,
     calibration_sha256: str,
     review_code_fingerprint: str,
+    knowledge_fingerprint: str = "",
 ) -> None:
-    """技术失败恢复时禁止更换模型、代码、校准器或输入。"""
+    """技术失败恢复时禁止更换模型、代码、知识、校准器或输入。"""
     expected = {
         "provider": provider,
         "model": model,
@@ -402,11 +408,27 @@ def assert_manifest_matches(
         "calibration_sha256": calibration_sha256,
         "prompt_fingerprint": calculate_prompt_fingerprint(architecture),
         "review_code_fingerprint": review_code_fingerprint,
+        "knowledge_fingerprint": knowledge_fingerprint,
         "case_ids": requested_case_ids,
     }
     changed = [key for key, value in expected.items() if manifest.get(key) != value]
     if changed:
         raise ValueError(f"盲测技术恢复条件已变更，禁止继续：{changed}")
+
+
+def calculate_knowledge_fingerprint() -> str:
+    """冻结会影响检索与评分的 Markdown 和治理 JSON 内容。"""
+    root = resolve_wiki_root(get_settings().wiki_dir)
+    if not root.is_dir():
+        return ""
+    files = [
+        path
+        for path in root.rglob("*")
+        if path.is_file()
+        and ".obsidian" not in path.parts
+        and path.suffix.lower() in {".md", ".json"}
+    ]
+    return fingerprint_files(root, files)
 
 
 def write_blind_error(results_root: Path, case_id: str, exc: Exception) -> Path:
