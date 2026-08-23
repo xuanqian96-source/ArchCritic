@@ -1,0 +1,17 @@
+# ArchCritic 备案期网页服务：使用独立 Nginx 配置监听 8080，不接管系统默认的 80 端口。
+[Unit]
+Description=ArchCritic HTTP Web Gateway
+After=network-online.target archcritic-backend.service
+Wants=network-online.target
+Requires=archcritic-backend.service
+
+[Service]
+Type=simple
+ExecStartPre=/usr/sbin/nginx -t -c /etc/archcritic/nginx-http.conf
+ExecStart=/usr/sbin/nginx -c /etc/archcritic/nginx-http.conf -g "daemon off;"
+ExecReload=/usr/sbin/nginx -s reload -c /etc/archcritic/nginx-http.conf
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

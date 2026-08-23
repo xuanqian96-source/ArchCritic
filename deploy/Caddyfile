@@ -1,0 +1,22 @@
+# ArchCritic HTTPS 入口：仅占用 443，保留现有游戏使用的 80 和 3000 端口。
+{
+	auto_https disable_redirects
+}
+
+api.archcritic.cn {
+	tls {
+		issuer acme {
+			disable_http_challenge
+		}
+	}
+
+	reverse_proxy 127.0.0.1:8000 {
+		flush_interval -1
+		stream_close_delay 5m
+	}
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+	}
+}

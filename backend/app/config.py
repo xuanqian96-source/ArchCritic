@@ -1,6 +1,7 @@
 """集中管理后端配置，供主应用、数据库和模型模块读取。"""
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -34,6 +35,7 @@ class Settings(BaseSettings):
     auth_cookie_name: str = "archcritic_session"
     auth_session_days: int = 30
     auth_cookie_secure: bool = False
+    auth_cookie_samesite: Literal["lax", "strict", "none"] = "lax"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

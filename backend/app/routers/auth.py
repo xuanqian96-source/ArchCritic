@@ -40,7 +40,7 @@ def set_session_cookie(response: Response, token: str) -> None:
         max_age=settings.auth_session_days * 24 * 60 * 60,
         httponly=True,
         secure=settings.auth_cookie_secure,
-        samesite="lax",
+        samesite=settings.auth_cookie_samesite,
         path="/",
     )
 
@@ -141,5 +141,10 @@ async def logout(
         if session is not None:
             db.delete(session)
             db.commit()
-    response.delete_cookie(settings.auth_cookie_name, path="/")
+    response.delete_cookie(
+        settings.auth_cookie_name,
+        path="/",
+        secure=settings.auth_cookie_secure,
+        samesite=settings.auth_cookie_samesite,
+    )
     return {"ok": True}

@@ -1,0 +1,12 @@
+{
+  "installCommand": "npm --prefix frontend-v1-replica ci",
+  "buildCommand": "npm --prefix frontend-v1-replica run build",
+  "outputDirectory": "./frontend-v1-replica/dist",
+  "nodeVersion": "22.11.0",
+  "rewrites": [
+    {
+      "source": "/*",
+      "destination": "/index.html"
+    }
+  ]
+}

@@ -121,13 +121,25 @@ npm run dev:check -- "要检查的样式或文本"
 
 ## 部署方法和命令
 
-当前阶段以本地开发验证为主，还没有正式部署脚本。  
-如需打包前端，可执行：
+生产部署采用“静态前端 + FastAPI 后端 + 独立网关”的方式：前端构建产物由 Nginx 提供，后端由 systemd 常驻运行，SQLite、上传文件和知识库统一放在 `/var/lib/archcritic/`，不随代码版本覆盖。
+
+备案审核期间，腾讯轻量云使用 `http://app.archcritic.cn:8080` 提供临时访问；该入口不占用服务器原有游戏的 80 和 3000 端口。备案完成后再启用 `api.archcritic.cn` 的 HTTPS，并把 EdgeOne 前端切换到正式接口。
+
+前端正式构建：
 
 ```bash
-cd /mnt/e/claude/论文/ArchCritic/frontend-v1-replica
+cd /mnt/e/claude/codex/ArchCritic/frontend-v1-replica
 npm run build
 ```
+
+部署文件位于 `deploy/`：
+
+- `archcritic-backend.service`：后端常驻服务，只监听服务器内部的 `127.0.0.1:8000`。
+- `archcritic-web.service` 和 `nginx-http.conf`：备案期 HTTP 网页服务，只监听 8080。
+- `Caddyfile`：备案完成后的 HTTPS 反向代理配置。
+- `backend.env.example`：服务器环境变量模板，真实密钥只填写在服务器 `/etc/archcritic/backend.env`，不得提交到 Git。
+
+EdgeOne Pages 使用根目录 `edgeone.json`，构建目录为 `frontend-v1-replica`，产物目录为 `frontend-v1-replica/dist`，并已配置单页应用回退规则。
 
 ## 测试方法和常用命令
 
@@ -197,6 +209,7 @@ npm run dev:check -- "text-[10px] font-extrabold"
 
 ## 搜索记录
 
+- 2026-08-23 核对腾讯 EdgeOne Makers 官方 `edgeone.json` 与构建指南：仓库根目录配置可以覆盖安装命令、构建命令、Node.js 版本和输出目录；Vite 静态站点必须把输出目录指向实际包含 `index.html` 的 `dist`，单页应用可使用 `/*` 到 `/index.html` 的 SPA 回退。当前项目据此固定使用 Node.js 22.11.0、`npm ci`、`npm run build` 和 `frontend-v1-replica/dist`。
 - 2026-05-19 查询 Google Gemini 官方文档：Gemini API 支持 OpenAI 兼容调用，Python OpenAI 客户端只需把 `api_key` 改为 Gemini Key，把 `base_url` 改为 `https://generativelanguage.googleapis.com/v1beta/openai/`，模型名可使用 `gemini-2.5-flash` 等 Gemini 模型。
 - 2026-05-19 实测 Gemini 配置：`gemini-2.5-flash` 非流式和流式调用均可返回结构化评图结果；需要关闭额外思考参数，否则可能出现 JSON 被截断。
 - 2026-05-19 查询并实测 Gemini 3.1 Pro：官方模型名为 `gemini-3.1-pro-preview`；该模型是 Gemini API 当前面向复杂任务、多模态理解和推理的最强模型之一，但官方价格页显示 Free Tier 不可用。本地 API Key 实测调用返回 429，提示 `gemini-3.1-pro` 免费层请求和输入 token 限额均为 0，需要开通计费后使用。

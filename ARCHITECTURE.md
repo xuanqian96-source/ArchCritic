@@ -79,6 +79,14 @@
 - `frontend-v1-replica/vite.config.ts`：固定本地开发端口 `4173`，并使用轮询保证 WSL 挂载盘热更新。
 - `DESIGN.md`：记录新版前端视觉规范、组件规则和字号层级。
 
+### 部署
+
+- `deploy/archcritic-backend.service`：以独立 `archcritic` 系统账户运行 FastAPI，只监听 `127.0.0.1:8000`。
+- `deploy/archcritic-web.service`、`deploy/nginx-http.conf`：备案期从 8080 提供前端静态文件，并把接口和知识库图片转发到后端。
+- `deploy/Caddyfile`：备案完成后为 `api.archcritic.cn` 提供 HTTPS 入口。
+- `deploy/backend.env.example`：定义服务器数据库、上传目录、知识库、模型和 Cookie 配置，不保存真实密钥。
+- `edgeone.json`、`frontend-v1-replica/.env.production`：定义 EdgeOne Pages 的前端构建、单页路由回退和正式 API 地址。
+
 ## 模块之间的调用关系
 
 1. 官网“体验产品”进入受保护页面；未登录时 `App.tsx` 转到注册登录页，后端通过 HttpOnly Cookie 识别当前账户。
@@ -97,6 +105,9 @@
 
 ## 关键设计决定和原因
 
+- 备案期入口固定使用 8080，且 Nginx 使用独立配置和 systemd 服务，原因是服务器现有游戏已经占用 80 和 3000，部署 ArchCritic 不得接管或重启原服务。
+- 服务器后端只监听回环地址，外部请求统一经网页网关进入；数据库、上传文件和知识库放在 `/var/lib/archcritic/`，原因是限制直接暴露并避免代码更新覆盖用户数据。
+- HTTPS Cookie 只在备案完成、正式 HTTPS 生效后开启；备案期 HTTP 使用 `SameSite=Lax` 且关闭 Secure，原因是浏览器在纯 HTTP 下不会发送 Secure Cookie。
 - 当前账户、项目和文件继续保存在本机 SQLite 与上传目录中，原因是本阶段先完成真实的单机闭环；上云时再迁移到正式数据库和对象存储。
 - 密码采用 PBKDF2-SHA256 加随机盐，数据库只保存会话令牌哈希，原因是即使本地开发也不应保存明文密码和登录令牌。
 - 首个正式注册账户接管升级前没有账户归属的历史项目，原因是保留已有测试数据；之后注册的账户严格隔离。

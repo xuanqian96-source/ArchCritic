@@ -1,0 +1,22 @@
+# ArchCritic 后端系统服务：从固定目录启动 FastAPI，并在服务器重启后自动恢复。
+[Unit]
+Description=ArchCritic FastAPI Backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=archcritic
+Group=archcritic
+WorkingDirectory=/opt/archcritic/current/backend
+EnvironmentFile=/etc/archcritic/backend.env
+ExecStart=/opt/archcritic/venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=60
+TimeoutStopSec=30
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
