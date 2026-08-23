@@ -1,6 +1,6 @@
 # 当前进度
 
-- 2026-08-23 已修正并验证 EdgeOne Makers 前端部署配置：根目录 `edgeone.json` 固定 Node.js 22.11.0、前端锁文件安装、Vite 构建、`frontend-v1-replica/dist` 输出目录和 SPA 回退；本地模拟构建已生成 `index.html` 与完整静态资源，等待推送 GitHub 后触发 EdgeOne 重建。
+- 2026-08-23 已修正并验证 EdgeOne Makers 前端部署配置并同步 GitHub `master`：根目录 `edgeone.json` 固定 Node.js 22.11.0、前端锁文件安装、Vite 构建、`frontend-v1-replica/dist` 输出目录和 SPA 回退；本地模拟构建已生成 `index.html` 与完整静态资源。旧部署预览令牌已过期，后续验收应使用 EdgeOne 最新构建生成的新预览链接。
 - 2026-08-23 已完成腾讯轻量云备案期部署：`app.archcritic.cn` 与 `api.archcritic.cn` 已解析到 `106.52.182.88`，ArchCritic 前端通过 8080 提供 HTTP 访问，FastAPI 后端仅监听 `127.0.0.1:8000`，网页、健康接口和登录保护检查通过；原游戏的 80、3000 端口保持正常。
 - 2026-08-23 已把本地知识库 202 个文件、272MB 完整迁移到 `/var/lib/archcritic/wiki`；后端、网页服务均由 systemd 常驻。当前模型仍为 `mock`，等待站点所有者在服务器私密填写百炼密钥后切回 `dashscope/qwen3.6-plus`。
 - 2026-08-23 备案期间不申请 HTTPS 证书；临时访问地址为 `http://app.archcritic.cn:8080`。备案完成后再启用 `api.archcritic.cn` HTTPS 和 EdgeOne Pages 正式入口。
