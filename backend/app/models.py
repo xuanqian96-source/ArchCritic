@@ -25,6 +25,9 @@ class User(Base):
     )
 
     projects: Mapped[list["Project"]] = relationship(back_populates="owner")
+    knowledge_conversations: Mapped[list["KnowledgeConversation"]] = relationship(
+        back_populates="user"
+    )
 
 
 class UserSession(Base):
@@ -161,6 +164,47 @@ class ChatMessage(Base):
     )
 
     submission: Mapped[Submission] = relationship(back_populates="chat_messages")
+
+
+class KnowledgeConversation(Base):
+    """保存知识助手会话，确保不同账户之间相互隔离。"""
+
+    __tablename__ = "knowledge_conversations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    selected_tool: Mapped[str] = mapped_column(String(50), default="none")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    user: Mapped[User] = relationship(back_populates="knowledge_conversations")
+    messages: Mapped[list["KnowledgeAssistantMessage"]] = relationship(
+        back_populates="conversation", cascade="all, delete-orphan"
+    )
+
+
+class KnowledgeAssistantMessage(Base):
+    """保存知识助手每轮消息及其引用和推荐结果。"""
+
+    __tablename__ = "knowledge_assistant_messages"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("knowledge_conversations.id"), index=True
+    )
+    role: Mapped[str] = mapped_column(String(20))
+    content: Mapped[str] = mapped_column(Text)
+    tool: Mapped[str] = mapped_column(String(50), default="none")
+    result: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    conversation: Mapped[KnowledgeConversation] = relationship(back_populates="messages")
 
 
 class AgentEvaluation(Base):

@@ -222,7 +222,12 @@ def build_display_content(source_type: str, content: str) -> str:
     return "\n".join(selected[:18]) or "\n".join(lines[:10])
 
 
-def extract_image_urls(content: str, wiki_root: Path, current_dir: Path) -> list[dict]:
+def extract_image_urls(
+    content: str,
+    wiki_root: Path,
+    current_dir: Path,
+    limit: int = 8,
+) -> list[dict]:
     """提取 Obsidian 和 Markdown 图片链接，返回前端可访问地址。"""
     image_refs = re.findall(r"!\[\[([^\]]+)\]\]", content)
     image_refs.extend(match[1] for match in re.findall(r"!\[([^\]]*)\]\(([^)]+)\)", content))
@@ -241,7 +246,7 @@ def extract_image_urls(content: str, wiki_root: Path, current_dir: Path) -> list
                 "url": f"/wiki-assets/{quote(relative_path)}",
             }
         )
-    return images[:8]
+    return images[:limit]
 
 
 def is_image_ref(ref: str) -> bool:

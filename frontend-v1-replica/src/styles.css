@@ -2,6 +2,7 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&family=Noto+Sans+SC:wght@400;500;600;700;900&display=swap");
 @import "tailwindcss";
 @import "./styles/report.css";
+@import "./styles/knowledge.css";
 
 :root {
   color: #171719;
@@ -20,6 +21,20 @@ body {
   margin: 0;
   overflow: hidden;
   background: #f4f6f8;
+}
+
+.knowledge-scroll {
+  scrollbar-color: #c9cdd5 transparent;
+  scrollbar-width: thin;
+}
+
+.knowledge-scroll::-webkit-scrollbar {
+  width: 5px;
+}
+
+.knowledge-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #c9cdd5;
 }
 
 button,

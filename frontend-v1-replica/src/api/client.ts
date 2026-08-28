@@ -24,9 +24,13 @@ async function readError(response: Response): Promise<string> {
 // 发起 JSON 请求，并在超时或后端不可达时返回明确原因。
 export async function requestJson<T>(path: string, options: RequestInit & { timeoutMs?: number } = {}): Promise<T> {
   const controller = new AbortController();
+  const abortFromCaller = () => controller.abort();
+  if (options.signal?.aborted) controller.abort();
+  else options.signal?.addEventListener("abort", abortFromCaller, { once: true });
   const timer = window.setTimeout(() => controller.abort(), options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-  const { timeoutMs: _timeoutMs, ...requestOptions } = options;
+  const { timeoutMs: _timeoutMs, signal: _signal, ...requestOptions } = options;
   void _timeoutMs;
+  void _signal;
   try {
     const response = await fetch(apiUrl(path), {
       credentials: "include",
@@ -37,6 +41,7 @@ export async function requestJson<T>(path: string, options: RequestInit & { time
     return await response.json() as T;
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
+      if (options.signal?.aborted) throw new Error("请求已取消。");
       throw new Error("请求等待超时，请稍后重试。");
     }
     if (error instanceof TypeError) {
@@ -45,6 +50,7 @@ export async function requestJson<T>(path: string, options: RequestInit & { time
     throw error;
   } finally {
     window.clearTimeout(timer);
+    options.signal?.removeEventListener("abort", abortFromCaller);
   }
 }
 

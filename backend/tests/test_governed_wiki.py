@@ -141,3 +141,16 @@ def test_governed_references_require_human_approval_and_media_permission(tmp_pat
     assert [item["governance_id"] for item in references] == ["KC-BEG-001", "PBC-001"]
     assert references[1]["image_urls"][0]["attribution"] == "摄影师 — CC BY 4.0"
     assert all(item["title"] != "AI 草稿" for item in references)
+
+
+def test_governed_references_support_hidden_obsidian_governance(tmp_path):
+    """确认隐藏治理目录可接入系统且不必显示在 Obsidian 图谱中。"""
+    governance = tmp_path / ".archcritic" / "长程Goal治理"
+    write_records(governance / "source-records.json", [approved_source()])
+    write_records(governance / "media-manifest.json", [approved_media()])
+    write_records(governance / "knowledge-card-drafts-v2-beginner.json", [approved_knowledge_card()])
+    write_records(governance / "public-building-case-drafts-v1.json", [approved_case()])
+
+    references = collect_governed_references(tmp_path, "方案阶段")
+
+    assert [item["governance_id"] for item in references] == ["KC-BEG-001", "PBC-001"]

@@ -306,7 +306,7 @@ export function Sidebar({ go, creating = false }: Pick<PageProps, "go"> & { crea
       </button>
       <div className="sidebar-scroll absolute bottom-[76px] left-0 right-[7px] top-[125px] overflow-y-auto pb-4">
         <NavItem text="首页" icon="home" active={currentRoute === "dashboard"} onClick={() => go("dashboard")} />
-        <NavItem text="知识库" icon="library" />
+        <NavItem text="知识库" icon="library" active={currentRoute === "knowledge"} onClick={() => go("knowledge")} />
         <div className="group mb-2 ml-[21px] flex h-[38px] w-[204px] items-center">
           <b className="sidebar-primary-text ml-[14px] font-bold text-[#171719]">我的项目</b>
           <button
@@ -322,7 +322,7 @@ export function Sidebar({ go, creating = false }: Pick<PageProps, "go"> & { crea
           const latest = getLatestVersion(group);
           const versions = [...group.versions].reverse();
           const hasVersionDropdown = versions.length > 1;
-          const rowSelected = currentRoute !== "dashboard" && currentRoute !== "create" && group.projects.some((project) => project.id === activeProject?.id);
+          const rowSelected = !["dashboard", "create", "knowledge"].includes(currentRoute) && group.projects.some((project) => project.id === activeProject?.id);
           const pinned = isProjectGroupPinned(group, pinnedProjectIds);
           const editingThisProject = editingProjectKey === group.key;
           const batchEditingThisProject = batchEditProjectKey === group.key;

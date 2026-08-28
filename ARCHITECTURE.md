@@ -7,7 +7,7 @@
 - `backend/app/main.py`：后端入口，初始化数据库、中间件和接口；用户上传目录不再作为公开静态目录。
 - `backend/app/config.py`：统一读取数据库、上传目录、模型、跨域、登录 Cookie 等配置。
 - `backend/app/database.py`：创建数据库连接，并为已有 SQLite 数据库补齐账户、任务书和报告字段。
-- `backend/app/models.py`：定义用户、登录会话、项目、提交、图纸、任务书、Agent 结果、报告和知识依据等数据表。
+- `backend/app/models.py`：定义用户、登录会话、项目、提交、图纸、任务书、Agent 结果、报告，以及知识助手会话与消息等数据表。
 - `backend/app/schemas.py`：定义前后端接口的数据格式和输入校验规则。
 - `backend/app/routers/auth.py`：提供本地注册、登录、退出、当前用户、个人资料和密码修改接口。
 - `backend/app/routers/assets.py`：登录后校验文件归属，再返回用户上传的图纸或任务书。
@@ -19,11 +19,15 @@
 - `backend/app/routers/submission_report_data.py`：负责报告的保存、读取和接口结构转换。
 - `backend/app/routers/submission_common.py`：保存提交路由共用的模型选择、暂停和错误处理规则。
 - `backend/app/routers/files.py`：负责图纸修改、单张删除和批量删除，并校验账户归属。
+- `backend/app/routers/knowledge_library.py`：提供登录后的知识库目录、单卡详情、按需 WebP 缩略图，以及账户隔离的知识助手对话接口；学习助手仍与正式 AI 评图检索分开。
+- `backend/app/knowledge_assistant_schemas.py`：定义 7 种知识助手工具、提问上下文、推荐结果、引用和历史消息的数据格式。
 - `backend/app/services/auth.py`：提供密码哈希、会话令牌和项目/提交归属校验。
 - `backend/app/services/taskbooks.py`：抽取 PDF、DOCX、TXT 任务书正文，整理课程要求，并按阶段、年级和任务书重点生成评分权重。
 - `backend/app/services/taskbook_rules.py`：把任务书条目标为强制、弹性、选配、参考或说明，并分配核对专项与证据方式。
 - `backend/app/services/uploads.py`：安全解析和删除本地上传文件，防止路径越界和误删共享文件。
 - `backend/app/services/submission_cleanup.py`：集中删除一次提交的关联数据和不再被引用的物理文件。
+- `backend/app/services/knowledge_library.py`：读取最终版知识卡和案例卡；目录只解析文字、图片引用数量和首图地址，浏览器接近卡片时才生成并在内存缓存 WebP 缩略图，单卡详情再解析全部对应图片。
+- `backend/app/services/knowledge_assistant.py`：合并浏览目录和治理字段，标准化面积等检索条件，召回候选卡片并调用默认真实模型；模型只能返回候选编号，后端会再次过滤不存在的编号。
 - `backend/app/agents/function_agent.py`：构建模型图文上下文，包含任务书正文、动态权重、知识依据和全部可用图纸。
 - `backend/app/agents/function_agent_report.py`：校验功能 Agent 输出并转换为统一报告结构。
 - `backend/app/agents/scheme_review.py`：按概念、方案、图纸三个阶段的白名单顺序执行专项 Agent 和综合评审 Agent，并按任务书权重计算总分。
@@ -51,7 +55,7 @@
 - `backend/app/benchmarking/knowledge_governance.py`：建立来源、媒体、案例、知识卡和问答治理清单；只初始化缺失文件，不覆盖人工审核结果。
 - `backend/app/benchmarking/content_review.py`：导出 150 条内容与固定任务复核表，锁定输入哈希；只有完整人工决定和显式确认才能回写，AI 不能自行批准。
 - `backend/app/benchmarking/content_evaluation.py`：验证并执行 20 个案例检索和 20 个问题联动固定任务，分别使用前五相关数和知识—案例联合覆盖率验收。
-- `../知识库测试版/99维护记录/长程Goal治理/`：保存来源台账、逐图媒体许可、60 张知识卡草稿、30 道固定问答、20 份案例证据草稿和 40 个固定检索/联动任务；候选内容与人工批准后的正式内容分开计数。
+- `../ArchCritic相关资料/知识库最终版/.archcritic/长程Goal治理/`：保存来源台账、逐图媒体许可、100 张知识卡和 50 份案例机器记录；隐藏目录不进入 Obsidian 图谱，候选内容与人工批准后的正式内容分开计数。
 - `backend/app/benchmarking/metrics.py`：计算教师分 MAE、RMSE、偏差、相关性、人工区间和语义指标。
 - `backend/app/benchmarking/research.py`、`charts.py`：导出 CSV、JSON、SVG 图表、论文数据报告和工作总结。
 - `backend/app/benchmarking/calibration.py`、`evidence_report.py`：固定四份校准与两份盲测划分，拟合校准器并导出新版科研数据包。
@@ -63,7 +67,7 @@
 - `backend/scripts/content_evaluation_status.py`：盘点 40 个固定检索/联动任务，并在全部人工批准后执行本地检索验收。
 - `backend/scripts/initialize_knowledge_governance.py`：初始化公共建筑内容治理工作区。
 - `backend/app/wiki.py`：检索 Obsidian 知识卡片，整理为模型可引用、前端可显示的依据和图片。
-- `backend/app/governed_wiki.py`：把人工批准的结构化知识卡和案例转换为检索条目；案例必须同时通过来源、证据和逐图许可检查，并保留图片署名。
+- `backend/app/governed_wiki.py`：把人工批准的结构化知识卡和案例转换为检索条目；优先读取 `.archcritic/长程Goal治理` 并兼容旧 `99维护记录`，案例必须同时通过来源、证据和逐图许可检查，并保留图片署名。
 - `backend/app/llm/`：统一封装演示、OpenAI、千问百炼和 Gemini 模型调用，以及百炼临时图纸地址。
 
 ### 前端
@@ -74,6 +78,7 @@
 - `frontend-v1-replica/src/state/workspace.tsx`：组合项目工作区状态；文件动作和公共转换已拆到 `workspaceFileActions.ts`、`workspaceShared.ts`。
 - `frontend-v1-replica/src/pagesFlow.tsx`：流程页面门面；项目信息、阶段选择、上传图纸和评图工作台分别位于 `src/pages/flow*.tsx`。
 - `frontend-v1-replica/src/pagesResults.tsx`：结果页面门面；报告、历史、公共报告组件和历史数据处理位于 `src/pages/report*.tsx`、`historyPage.tsx`。
+- `frontend-v1-replica/src/pages/knowledgePage.tsx`、`src/pages/knowledgeAssistant.tsx`、`src/styles/knowledge.css`、`src/api/knowledge.ts`：展示总览和“目录 + 深度阅读”知识库页面，提供搜索、筛选、关联跳转、正文图片、7 项助手工具、真实对话，以及可恢复原浏览状态的 AI 推荐结果。
 - `frontend-v1-replica/src/components.tsx`：公共组件门面；基础组件、侧栏和账户弹窗位于 `src/components/`。
 - `frontend-v1-replica/src/styles.css`、`src/styles/report.css`：分别保存通用样式和报告相关样式。
 - `frontend-v1-replica/vite.config.ts`：固定本地开发端口 `4173`，并使用轮询保证 WSL 挂载盘热更新。
@@ -102,6 +107,7 @@
 11. 九样本论文实验由 `paper_experiment.py` 生成不含分数和人工问题的匿名包；C0—C3 读取同一输入并分别冻结。中档提示只使用排除当前案例后的汇总锚点。冻结后，`paper_experiment_analysis.py` 才在本地读取私有答案和作者逐条核对决定，外部模型不接触私有答案。
 12. 实验性视觉锚点链路只在五个专项 Agent 完成后运行：最终评分 Agent 同时读取当前图纸、专项结论和匿名锚点图，输出档位、最近锚点、比较依据与总分；教师测试分数只在结果冻结后用于本地误差分析。
 13. `knowledge_governance.py` 为来源、媒体、案例、知识卡和问答分配稳定编号；案例分析还要在 `evidence_register` 中逐项记录来源、页面位置和“官方事实/学科推断”。草稿可以统计整理进度，但只有来源、许可、学科复核和审核状态全部通过时才进入正式验收计数。
+14. 知识助手收到问题后先从最终版目录和治理 JSON 提取候选，再把候选编号与必要摘要交给默认模型；后端过滤模型虚构编号并保存会话，前端只用通过校验的推荐结果改变当前知识库列表。
 
 ## 关键设计决定和原因
 
@@ -121,6 +127,7 @@
 - 阶段化多 Agent 总预算保持 285 秒，原因是需要兼顾多模型顺序评审和前端可接受的等待时间。
 - 百炼图纸采用临时 OSS URL 并缓存过期时间，原因是建筑图纸体积较大，base64 直传更容易超时。
 - 每次报告保存任务书和知识库快照，原因是历史报告必须保留生成当时的评分口径与依据，不能随资料更新而改变。
+- 知识助手采用“本地召回、模型解释、后端校验”而不是让模型直接遍历文件，原因是 150 张卡片规模下更快、更可控，也能阻止虚构编号；普通问答和当前卡片问答不改变列表，推荐工具使用独立结果状态并保存原总览快照。
 - 新正式基准不再使用旧 `.prepared` 同根目录作为“物理隔离”证据；只有通过 `blind_protocol.py` 生成的无答案输入包、不接收答案路径的评图进程、冻结哈希和独立裁判进程才可用于盲测声明。
 - 九样本论文实验是内部基准而非外部盲测；教师分数和人工问题清单与模型输入物理分离，语义核对采用作者本地逐条决定，不虚构独立教师裁判，也不向外部模型发送私有答案。
 - 视觉锚点只用于最终总分尺度定位，不作为专项问题答案；三案例测试没有改善 MAE 或高中低排序，因此该能力保持实验性，不进入产品默认评分链路。

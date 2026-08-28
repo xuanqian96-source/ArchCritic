@@ -13,6 +13,8 @@ import {
 } from "./pagesFlow";
 import { HistoryPage, ReportPage } from "./pagesResults";
 import { AuthPage } from "./pagesAuth";
+import { KnowledgePage } from "./pages/knowledgePage";
+import { prefetchKnowledgeLibrary } from "./api/knowledge";
 import { useAuth } from "./state/auth";
 
 export type Route =
@@ -26,7 +28,8 @@ export type Route =
   | "confirm"
   | "processing"
   | "report"
-  | "history";
+  | "history"
+  | "knowledge";
 
 export interface PageProps {
   go: (route: Route) => void;
@@ -44,6 +47,7 @@ const VALID_ROUTES = new Set<Route>([
   "processing",
   "report",
   "history",
+  "knowledge",
 ]);
 
 // 从地址栏读取页面，方便刷新后继续验收当前页面。
@@ -102,6 +106,12 @@ export default function App() {
     if (user && route === "auth") go("dashboard");
   }, [go, loading, route, user]);
 
+  useEffect(() => {
+    if (!user) return;
+    const timer = window.setTimeout(prefetchKnowledgeLibrary, 300);
+    return () => window.clearTimeout(timer);
+  }, [user]);
+
   const page = useMemo(() => {
     const props = { go };
     return {
@@ -116,6 +126,7 @@ export default function App() {
       processing: <ProcessingPage {...props} />,
       report: <ReportPage {...props} />,
       history: <HistoryPage {...props} />,
+      knowledge: <KnowledgePage {...props} />,
     }[route];
   }, [go, route]);
 

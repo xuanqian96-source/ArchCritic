@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 2200
     llm_agent_timeout_seconds: int = 50
     llm_review_timeout_seconds: int = 285
+    knowledge_assistant_timeout_seconds: int = 60
     llm_image_detail: str = "high"
     llm_trust_env: bool = True
     llm_max_model_image_bytes: int = 15 * 1024 * 1024
@@ -28,7 +29,7 @@ class Settings(BaseSettings):
     score_calibration_file: str = "../标注基准集/.prepared/evidence_v2_calibration.json"
     database_url: str = "sqlite:///./archcritic.db"
     upload_dir: str = "uploads"
-    wiki_dir: str = "../../wiki-test/wiki"
+    wiki_dir: str = "../../ArchCritic相关资料/知识库最终版"
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     app_name: str = "ArchCritic API"
     app_version: str = "0.4.0-research.1"

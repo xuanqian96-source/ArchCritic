@@ -25,7 +25,7 @@ STAGE_CODES = {
 
 def collect_governed_references(wiki_root: Path, stage_name: str) -> list[dict[str, Any]]:
     """只读取人工确认、来源合格且媒体许可满足要求的结构化内容。"""
-    governance_root = wiki_root / "99维护记录" / "长程Goal治理"
+    governance_root = resolve_governance_root(wiki_root)
     try:
         source_records = read_records(governance_root / "source-records.json")
         media_records = read_records(governance_root / "media-manifest.json")
@@ -52,6 +52,18 @@ def collect_governed_references(wiki_root: Path, stage_name: str) -> list[dict[s
         )
     )
     return references
+
+
+def resolve_governance_root(wiki_root: Path) -> Path:
+    """优先读取不进入 Obsidian 图谱的隐藏治理目录，并兼容旧知识库。"""
+    candidates = [
+        wiki_root / ".archcritic" / "长程Goal治理",
+        wiki_root / "99维护记录" / "长程Goal治理",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
 
 
 def collect_knowledge_references(
