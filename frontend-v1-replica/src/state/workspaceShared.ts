@@ -67,7 +67,7 @@ export interface WorkspaceState {
   deleteDrawingIds: (fileIds: number[]) => Promise<void>;
   startEvaluation: () => Promise<void>;
   pauseEvaluation: () => Promise<void>;
-  downloadCurrentReport: () => void;
+  downloadCurrentReport: () => Promise<void>;
   sendQuestion: (content: string, tool?: ChatMessage["tool"], signal?: AbortSignal, onDelta?: (text: string) => void) => Promise<void>;
   refreshChatMessages: () => Promise<ChatMessage[]>;
   inheritProject: (projectId: number, sourceSubmissionId?: number) => Promise<void>;
@@ -214,4 +214,11 @@ export function cleanSavedDescription(description?: string | null) {
 // 当前产品统一使用千问；旧草稿中的其他模型值也在恢复时收敛到同一配置。
 export function normalizeSavedModel(_provider?: string | null, _model?: string | null) {
   return { provider: "dashscope", model: "qwen3.8-max" };
+}
+
+// 后端尚未保存最新问题时保留前端即时消息，避免轮询用旧历史覆盖它。
+export function mergePersistedChatMessages(current: ChatMessage[], saved: ChatMessage[]) {
+  const currentUserCount = current.filter((message) => message.role === "user").length;
+  const savedUserCount = saved.filter((message) => message.role === "user").length;
+  return savedUserCount < currentUserCount ? current : saved;
 }

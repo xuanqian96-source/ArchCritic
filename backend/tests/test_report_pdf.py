@@ -3,7 +3,27 @@
 import subprocess
 from types import SimpleNamespace
 
+from app.services import report_pdf
 from app.services.report_pdf import build_report_pdf, build_report_pdf_snapshot
+
+
+def test_report_pdf_falls_back_for_unsupported_chinese_font(tmp_path, monkeypatch):
+    """服务器中文字体为不兼容 OTF 时应回退，而不是让导出接口返回 500。"""
+    unsupported_font = tmp_path / "unsupported.otf"
+    unsupported_font.write_bytes(b"OTTO-not-a-supported-truetype-font")
+    latin_path = report_pdf._system_font_paths()[1]
+    monkeypatch.setattr(
+        report_pdf,
+        "_system_font_paths",
+        lambda: (str(unsupported_font), latin_path),
+    )
+    report_pdf._register_fonts.cache_clear()
+    try:
+        chinese_font, latin_font = report_pdf._register_fonts()
+        assert chinese_font == "STSong-Light"
+        assert latin_font == report_pdf.FONT_LATIN
+    finally:
+        report_pdf._register_fonts.cache_clear()
 
 
 def test_build_report_pdf_snapshot_keeps_project_grade():

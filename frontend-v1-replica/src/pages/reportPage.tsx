@@ -56,7 +56,8 @@ function ReportContent({ go }: PageProps) {
       if (!active || (saved && saved[saved.length - 1]?.role !== "user")) return;
       timer = window.setTimeout(refreshPendingAnswer, 2000);
     };
-    void refreshPendingAnswer();
+    // 等后端先保存本轮用户消息，避免首次轮询用旧历史覆盖前端即时消息。
+    timer = window.setTimeout(refreshPendingAnswer, 2000);
     return () => { active = false; window.clearTimeout(timer); };
   }, [pendingChatKey, refreshChatMessages, submission]);
   const openHistory = async () => {

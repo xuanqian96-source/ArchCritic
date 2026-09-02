@@ -78,8 +78,12 @@ async function test() {
   if (reportShared.includes(">在知识库查看<")) throw new Error("报告知识卡仍保留二次跳转按钮");
   if (reportShared.includes(".slice(0, 14)") || reportShared.includes("image_urls.slice(0, 6)")) throw new Error("报告知识卡正文或图片仍被缩略截断");
   include(reportApi, "report/export?format=pdf", "下载报告按钮没有请求真实 PDF");
+  include(reportApi, "URL.createObjectURL", "报告 PDF 没有在当前页安全下载");
+  if (reportApi.includes("window.location.href")) throw new Error("报告下载失败仍会跳离当前页面");
   include(reportApi, "/chat/stream", "报告助手没有使用流式回答接口");
   include(workspace, "streamChat(submissionId", "工作区没有持续接收报告回答流");
+  include(workspace, "mergePersistedChatMessages", "报告消息轮询仍可能覆盖刚发送的问题");
+  include(results, "window.setTimeout(refreshPendingAnswer, 2000)", "报告消息轮询没有等待后端先保存用户问题");
   include(knowledge, "返回报告界面", "报告推荐知识页缺少返回报告入口");
   include(knowledge, 'backLabel={assistantResult ? "返回推荐总览"', "推荐卡详情没有返回推荐总览");
   include(knowledge, "hideEmpty={Boolean(assistantResult)}", "推荐结果仍会显示数量为零的类型");

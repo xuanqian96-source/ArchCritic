@@ -11,8 +11,9 @@ from typing import Any
 
 from reportlab.lib.colors import HexColor
 from reportlab.lib.pagesizes import A4
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfbase.ttfonts import TTFont, TTFError
 from reportlab.pdfgen.canvas import Canvas
 
 
@@ -62,16 +63,24 @@ def _system_font_paths() -> tuple[str, str]:
 
 
 @lru_cache(maxsize=1)
-def _register_fonts() -> None:
-    """把系统字体嵌入 PDF，保证跨设备阅读时字形一致。"""
+def _register_fonts() -> tuple[str, str]:
+    """优先嵌入系统字体，不兼容时回退到 PDF 标准中文字体。"""
     chinese_path, latin_path = _system_font_paths()
-    pdfmetrics.registerFont(TTFont(FONT_CJK, chinese_path))
+    try:
+        pdfmetrics.registerFont(TTFont(FONT_CJK, chinese_path))
+        chinese_font = FONT_CJK
+    except (OSError, TTFError):
+        # 部分 Linux 中文字体使用 CFF 轮廓，ReportLab 的 TTFont 无法读取。
+        chinese_font = "STSong-Light"
+        pdfmetrics.registerFont(UnicodeCIDFont(chinese_font))
     pdfmetrics.registerFont(TTFont(FONT_LATIN, latin_path))
+    return chinese_font, FONT_LATIN
 
 
 def _font_name(char: str) -> str:
     """为每个字符选择具备对应字形的字体。"""
-    return FONT_LATIN if ord(char) <= 127 or char in LATIN_SYMBOLS else FONT_CJK
+    chinese_font, latin_font = _register_fonts()
+    return latin_font if ord(char) <= 127 or char in LATIN_SYMBOLS else chinese_font
 
 
 def _clean_text(value: Any) -> str:

@@ -12,9 +12,23 @@ export function getReferences(submissionId: number): Promise<KnowledgeReference[
   return requestJson(`/api/submissions/${submissionId}/references`);
 }
 
-// 下载后端根据当前真实评分生成的 PDF 报告。
-export function downloadReport(submissionId: number): void {
-  window.location.href = apiUrl(`/api/submissions/${submissionId}/report/export?format=pdf`);
+// 下载后端根据当前真实评分生成的 PDF 报告，失败时不离开当前报告页。
+export async function downloadReport(submissionId: number): Promise<void> {
+  const response = await fetch(apiUrl(`/api/submissions/${submissionId}/report/export?format=pdf`), {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({})) as { detail?: string };
+    throw new Error(payload.detail ?? "报告 PDF 生成失败，请稍后重试。");
+  }
+  const blobUrl = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = blobUrl;
+  link.download = `archcritic-report-${submissionId}.pdf`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(blobUrl), 0);
 }
 
 // 发送报告追问。

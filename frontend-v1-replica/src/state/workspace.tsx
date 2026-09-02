@@ -6,7 +6,7 @@ import { downloadReport, listChatMessages, streamChat } from "../api/reports";
 import { cancelEvaluation, createSubmission, evaluateStream, getSubmissionWorkspace, updateSubmission } from "../api/submissions";
 import type { Attachment, ChatMessage, DrawingFile, OverallReport, Project, Submission, SubmissionHistory } from "../types/api";
 import { useAuth } from "./auth";
-import { applyEvaluationEvent, cleanSavedDescription, DEFAULT_DRAFT, DUPLICATE_PROJECT_NAME_MESSAGE, EMPTY_EVALUATION, type DraftValues, type EvaluationStatus, getLastSubmissionKey, LAST_SUBMISSION_KEY, normalizeProjectNameForCompare, normalizeSavedModel, type SubmissionPreload, type SubmissionSnapshot, type WorkspaceState, WorkspaceContext } from "./workspaceShared";
+import { applyEvaluationEvent, cleanSavedDescription, DEFAULT_DRAFT, DUPLICATE_PROJECT_NAME_MESSAGE, EMPTY_EVALUATION, type DraftValues, type EvaluationStatus, getLastSubmissionKey, LAST_SUBMISSION_KEY, mergePersistedChatMessages, normalizeProjectNameForCompare, normalizeSavedModel, type SubmissionPreload, type SubmissionSnapshot, type WorkspaceState, WorkspaceContext } from "./workspaceShared";
 import { useWorkspaceFileActions } from "./workspaceFileActions";
 
 export function WorkspaceProvider({ children }: PropsWithChildren) {
@@ -449,8 +449,13 @@ export function WorkspaceProvider({ children }: PropsWithChildren) {
   }, [submission]);
 
   // 下载当前报告。
-  const downloadCurrentReport = useCallback(() => {
-    if (submission) downloadReport(submission.id);
+  const downloadCurrentReport = useCallback(async () => {
+    if (!submission) return;
+    try {
+      await downloadReport(submission.id);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "报告 PDF 生成失败，请稍后重试。");
+    }
   }, [submission]);
 
   // 发送报告追问并同步右侧对话区。
@@ -482,7 +487,7 @@ export function WorkspaceProvider({ children }: PropsWithChildren) {
   const refreshChatMessages = useCallback(async () => {
     if (!submission) return [];
     const saved = await listChatMessages(submission.id);
-    setChatMessages(saved);
+    setChatMessages((current) => mergePersistedChatMessages(current, saved));
     invalidateSubmissionCache(submission.id);
     return saved;
   }, [invalidateSubmissionCache, submission]);
