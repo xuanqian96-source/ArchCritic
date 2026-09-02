@@ -1,4 +1,6 @@
-"""提供项目创建与列表接口，供前端项目管理页面调用。"""
+"""提供项目创建、摘要、历史与列表接口，供前端项目管理页面调用。"""
+
+from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -6,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import AgentEvaluation, Attachment, DrawingFile, OverallReport, Project, Submission, User
-from app.schemas import ProjectCreate, ProjectRead, ProjectUpdate, SubmissionHistoryRead, SubmissionRead
+from app.schemas import ProjectCreate, ProjectOverviewRead, ProjectRead, ProjectUpdate, SubmissionHistoryRead, SubmissionRead
 from app.services.auth import get_current_user, require_owned_project
 from app.services.submission_cleanup import delete_submission_tree
 
@@ -154,6 +156,99 @@ async def list_projects(
     return list(result.scalars().all())
 
 
+def build_history_item(
+    submission: Submission,
+    report: OverallReport | None,
+    scores: list[AgentEvaluation],
+) -> SubmissionHistoryRead:
+    """把一次提交及其报告整理为轻量历史摘要。"""
+    return SubmissionHistoryRead(
+        id=submission.id,
+        title=submission.title,
+        design_stage=submission.design_stage,
+        created_at=submission.created_at,
+        overall_score=report.overall_score if report else None,
+        grade=report.grade if report else None,
+        summary=report.summary if report else "",
+        must_fix=report.must_fix if report else [],
+        strengths=report.strengths if report else [],
+        dimension_scores={item.dimension: item.score for item in scores},
+    )
+
+
+def load_project_history_items(db: Session, project_id: int) -> list[SubmissionHistoryRead]:
+    """用固定数量查询读取一个项目的全部历史摘要。"""
+    rows = db.execute(
+        select(Submission, OverallReport)
+        .outerjoin(OverallReport, OverallReport.submission_id == Submission.id)
+        .where(Submission.project_id == project_id)
+        .order_by(Submission.id.asc())
+    ).all()
+    submission_ids = [submission.id for submission, _ in rows]
+    score_groups: dict[int, list[AgentEvaluation]] = defaultdict(list)
+    if submission_ids:
+        evaluations = db.execute(
+            select(AgentEvaluation).where(AgentEvaluation.submission_id.in_(submission_ids))
+        ).scalars()
+        for evaluation in evaluations:
+            score_groups[evaluation.submission_id].append(evaluation)
+    return [
+        build_history_item(submission, report, score_groups[submission.id])
+        for submission, report in rows
+    ]
+
+
+@router.get("/overview", response_model=list[ProjectOverviewRead])
+async def list_project_overview(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[ProjectOverviewRead]:
+    """一次返回全部项目的版本摘要，供首页和继承列表共用。"""
+    projects = list(db.execute(
+        select(Project).where(Project.user_id == user.id).order_by(Project.id.desc())
+    ).scalars())
+    project_ids = [project.id for project in projects]
+    if not project_ids:
+        return []
+
+    submissions = list(db.execute(
+        select(Submission)
+        .where(Submission.project_id.in_(project_ids))
+        .order_by(Submission.id.desc())
+    ).scalars())
+    submission_ids = [submission.id for submission in submissions]
+    reports = list(db.execute(
+        select(OverallReport).where(OverallReport.submission_id.in_(submission_ids))
+    ).scalars()) if submission_ids else []
+    evaluations = list(db.execute(
+        select(AgentEvaluation).where(AgentEvaluation.submission_id.in_(submission_ids))
+    ).scalars()) if submission_ids else []
+
+    submissions_by_project: dict[int, list[Submission]] = defaultdict(list)
+    reports_by_submission = {report.submission_id: report for report in reports}
+    scores_by_submission: dict[int, list[AgentEvaluation]] = defaultdict(list)
+    for submission in submissions:
+        submissions_by_project[submission.project_id].append(submission)
+    for evaluation in evaluations:
+        scores_by_submission[evaluation.submission_id].append(evaluation)
+
+    return [
+        ProjectOverviewRead(
+            project=project,
+            submissions=submissions_by_project[project.id],
+            history=[
+                build_history_item(
+                    submission,
+                    reports_by_submission.get(submission.id),
+                    scores_by_submission[submission.id],
+                )
+                for submission in reversed(submissions_by_project[project.id])
+            ],
+        )
+        for project in projects
+    ]
+
+
 @router.get("/{project_id}", response_model=ProjectRead)
 async def get_project(
     project_id: int,
@@ -190,28 +285,4 @@ async def list_project_history(
     """返回一个项目下用于历史版本追踪的提交和分数。"""
     require_owned_project(db, project_id, user)
 
-    rows = db.execute(
-        select(Submission, OverallReport)
-        .outerjoin(OverallReport, OverallReport.submission_id == Submission.id)
-        .where(Submission.project_id == project_id)
-        .order_by(Submission.id.asc())
-    ).all()
-
-    items = []
-    for submission, report in rows:
-        scores = db.execute(
-            select(AgentEvaluation).where(AgentEvaluation.submission_id == submission.id)
-        ).scalars()
-        items.append(SubmissionHistoryRead(
-            id=submission.id,
-            title=submission.title,
-            design_stage=submission.design_stage,
-            created_at=submission.created_at,
-            overall_score=report.overall_score if report else None,
-            grade=report.grade if report else None,
-            summary=report.summary if report else "",
-            must_fix=report.must_fix if report else [],
-            strengths=report.strengths if report else [],
-            dimension_scores={item.dimension: item.score for item in scores},
-        ))
-    return items
+    return load_project_history_items(db, project_id)

@@ -11,18 +11,20 @@
 - 官网首页点击“体验产品”后，首次使用会进入注册页；之后使用本地账户登录，每个账户只看到自己的项目、图纸和历史报告。
 - 选择设计阶段后，系统会自动启用对应 Agent：概念阶段侧重场地、形式与设计概念；方案阶段评审功能、场地、形式与结构；图纸阶段增加图面表达评审。
 - 上传 PDF、DOCX 或 TXT 任务书后，后端会提取正文，把具体要求交给每个 Agent，并根据任务书重点、弱化要求和年级调整各项评分占比。
-- 点击图纸上传区可以选择多张本地图片，并按总平面图、一层平面、分析图、效果图分类查看；开始评图后，已选图纸会尽量以高清版本保存到后端。
+- 点击图纸上传区可以选择多张本地图片，并按总平面图、一层平面、分析图、效果图分类查看；开始评图后，系统保留原图，并为包含多个独立图纸区域的平面或技术图限量生成辅助裁切图。
 - 自动创建项目和方案提交记录。
-- 返回一份评图结果，包含总分、摘要、重点问题、建议和分项判断，并动态更新右侧报告；配置 OpenAI、阿里云百炼或 Gemini 后，三个阶段都会调用对应专项 Agent 和综合评审 Agent。
-- 使用阿里云百炼时，系统会先把本地图纸上传为模型可读取的临时 `oss://` URL，再调用 `qwen3.6-plus`，避免 base64 直传图片导致超时。
+- 返回一份评图结果，包含总分、摘要、重点问题、建议和分项判断，并动态更新右侧报告；当前产品通过阿里云百炼 `qwen3.8-max` 调用对应专项 Agent、综合评审 Agent 并生成最终报告。
+- 使用阿里云百炼时，系统会先把本地图纸上传为模型可读取的临时 `oss://` URL，再调用 `qwen3.8-max`，避免 base64 直传图片导致超时。
 - 百炼临时图纸上传带有重试机制；流式输出中断时会自动改用非流式结构化评图兜底。
 - 本地私有基准集支持一键生成匿名逐页输入、运行真实多 Agent 回归、计算教师分误差与语义指标，并导出 CSV、JSON、SVG 图表和论文报告；私有图纸与结果默认不进入 Git。
 - 已实现“共享图纸证据—专项等级评价—独立任务书核对—确定性评分—教师校准”研究架构。已冻结的四份校准、两份盲测未能稳定区分高低样本，因此产品默认仍使用 `legacy_v1`，新链路仅作研究验证。
 - 模型评图会读取全部可用图纸，并优先让模型看到平面图，避免只分析第一张图纸导致误判。
+- 首页使用一次轻量摘要读取全部项目状态；进入或悬停项目卡片时再读取并复用单次工作台快照，避免随项目数量增加产生大量重复请求。
 - 右侧 AI 对话区会显示当前阶段各 Agent 的真实顺序评审进度，评图完成后同步更新报告区。
-- 左侧“开始 AI 评图”旁可以选择本次调用的模型，当前支持千问、Gemini 和演示模式。
+- 报告页会把当前评分维度拆成四项具体小分，并在右侧集中展示反馈要点。反馈关联卡片会按真实知识库编号读取与知识库详情页相同的完整正文和图片，规范应用卡阅读时隐藏没有可读内容的“原始 PDF”附件章节，接口暂时不可用时才显示评图快照；下载报告会生成包含总分、专项评分、各评价点具体小分和反馈建议的多页 PDF，不附加关联知识卡。PDF 的专项标题与分数直接显示，四项小分横向并列，以留白和细分割线区分；反馈按等级使用轻量颜色提示，不再嵌套卡片。AI 辅助助手提供图纸复核、问题解释和知识推荐，回答按流式逐步显示；生成中仍可编辑下一条问题，暂停后即可发送。知识推荐链接会进入与知识助手一致的推荐总览，并继续显示原报告对话，卡片详情可直接返回报告。只有图纸证据明确证明原判断有误时，图纸复核才会限幅修订分数，同时清理或改写总评、反馈、专项结论和具体小分中的错误判断并保存修订记录；原判断无误时不改报告。
+- 当前产品按用途固定分流：评图、各 Agent 与报告生成使用 `qwen3.8-max`，知识库助手和报告辅助助手使用 `qwen3.7-plus`；界面不提供模型切换入口，两个助手也不显示内部模型名称。
 - 从 `ArchCritic相关资料/知识库最终版` 检索 Obsidian Wiki 知识依据，评图时只把本次最相关的卡片交给模型；每条依据会带编号并可点击打开居中的知识卡片，案例卡片可显示图片。
-- 左侧“知识库”提供独立学习浏览页，可查看 100 张知识卡和 50 张案例卡；右侧采用带案例首图缩略图的总览和“目录 + 深度阅读”两阶段布局，支持分级或建筑类型筛选、搜索、关联编号跳转及正文图片按需加载。建筑知识助手已接入后端默认真实模型，提供案例推荐、知识查询、相似案例、案例对比、学习路径、设计问题拆解和当前卡片问答；推荐结果只使用后端校验过的真实卡片编号，并可恢复进入推荐前的标签、搜索和滚动位置。学习浏览不改变正式 AI 评图的人工审核门槛。
+- 左侧“知识库”提供独立学习浏览页，可查看 100 张知识卡和 50 张案例卡；知识卡按规范、场地、功能、空间、结构、概念、综合分类，支持搜索、关联跳转、正文图片和按难度自测。建筑知识助手支持真实流式回答、新建与历史会话，进入历史会话时默认定位最新消息，返回知识库后可恢复上次对话位置；工具标签在发送后以轻量紫色图标文字呈现。助手提供案例推荐、知识查询、学习清单和当前卡片问答；当前卡片问答只显示文字回答，其余推荐结果只使用后端校验过的真实卡片编号，并可直接更新知识库卡片列表。学习浏览与评图使用同一套卡片来源，但正式 AI 评图仍遵守人工审核门槛。面向用户的页面按最终交付状态呈现，不展示内容治理或审批流程词；AI 推荐统一使用中性的准确性提示，内部治理字段继续用于检索准入和审计。
 - 每次评图会保存当次使用的知识库依据快照，历史报告打开时优先读取快照，避免知识库更新后依据编号和报告内容错位。
 - 报告反馈中的 `[K1]`、`[K2]` 等知识编号会显示为可点击引用，用户可以从具体问题直接打开对应知识卡片。
 - 专项 Agent 评分支持展开查看，能看到分项分数、评分理由、证据、已确认事实、信息缺口和不确定观察。
@@ -41,11 +43,11 @@
 - 建筑知识助手先在后端用建筑类型、面积、场地、设计阶段和关键词召回候选，再让默认模型只在候选编号中选择和解释；模型返回后再次校验编号，会话按账户保存在 SQLite。`mock` 模式只用于开发检查，不会伪造助手成功回答。
 - 前端使用 Vite 启动本地页面，当前正式入口是 `frontend-v1-replica/`。
 - 新版前端位于 `frontend-v1-replica/`，使用 React、TypeScript、Tailwind CSS 和 Vite，已接通项目、图纸、任务书、评图、报告、知识追溯、历史版本和追问。迁移计划见 `docs/plans/2026-05-31-frontend-v1-interaction-and-backend-migration-plan.md`。
-- 评图结果支持四种模式：`mock` 仅用于开发检查，`openai`、`dashscope` 和 `gemini` 会读取设计说明、任务书正文、上传图纸和 Wiki 依据；后端按当前阶段顺序调用专项 Agent，再由综合评审 Agent 输出最终报告。
+- 产品评图统一使用 `dashscope/qwen3.8-max`，会读取设计说明、任务书正文、上传图纸和 Wiki 依据；后端按当前阶段顺序调用专项 Agent，再由综合评审 Agent 输出最终报告。知识库助手和报告辅助助手固定使用 `dashscope/qwen3.7-plus`，不接收前端模型参数。
 - 阶段化多 Agent 默认把单次总评审预算控制在 285 秒内，每个专项 Agent 输出事实识别、分项评分、不确定观察和修改建议，综合评审只汇总专项结果。
 - 报告会保存本次实际使用的 Agent、任务书摘要和动态评分权重；历史页直接读取真实报告，没有报告时明确显示未完成状态，不使用设计稿占位数据。
 - 真实模型评图会先要求模型列出图纸事实，再进行评价；输出结构统一为 `observed_facts + sub_scores`，与设计说明或事实识别冲突的内容会降级为不确定观察，避免错误地进入“必须修改”。
-- 前端可通过评图请求参数指定本次模型，后端仍保留 `.env` 作为默认模型配置。
+- 前端只在开始评图前展示并提交 `dashscope/qwen3.8-max`；旧草稿保存过的其他模型值在恢复时也会自动回落到该模型。两个助手由后端固定调用 `qwen3.7-plus`。
 - 百炼真实评图不再把图片作为 base64 直接传给模型，而是使用百炼临时 OSS 文件 URL；数据库会缓存临时 URL 和过期时间，减少重复上传。
 - `backend/app/benchmarking/` 负责基准数据解析、高清拆页、真实模型调用、统计、图表和科研报告；正式新实验使用“无答案盲跑—结果冻结—独立裁判”流程，评图进程不读取教师分或标注答案。
 - 九样本论文实验另设 C0 直接评审、C1 结构化提示词增强的单模型评审、C2 多 Agent 和 C3 知识增强多 Agent 四个条件；匿名输入与私有答案分离，模型结果冻结后才按人工标注清单进行本地严格语义核对。
@@ -57,26 +59,19 @@
 ### 后端
 
 ```bash
-cd /mnt/e/claude/论文/ArchCritic/backend
+cd /mnt/e/claude/codex/ArchCritic/backend
 test -d .venv || python3 -m venv .venv
 ./.venv/bin/pip install -r requirements.txt
 cp .env.example .env
 ./.venv/bin/python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-如需启用真实 GPT 评图，请在 `backend/.env` 中配置：
-
-```env
-LLM_PROVIDER=openai
-LLM_MODEL=gpt-4o-mini
-OPENAI_API_KEY=你的 OpenAI API Key
-```
-
-如需启用阿里云百炼评图，请在 `backend/.env` 中配置：
+启用阿里云百炼时，请在 `backend/.env` 中配置：
 
 ```env
 LLM_PROVIDER=dashscope
-LLM_MODEL=qwen3.6-plus
+LLM_MODEL=qwen3.8-max
+LLM_ASSISTANT_MODEL=qwen3.7-plus
 DASHSCOPE_API_KEY=你的百炼 API Key
 DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 SCORING_ARCHITECTURE=legacy_v1
@@ -84,25 +79,16 @@ SCORING_ARCHITECTURE=legacy_v1
 
 需要复现实验证据层时，可临时改为 `SCORING_ARCHITECTURE=evidence_v2`；当前盲测未通过高低分区分验证，不建议直接用于学生正式评分。
 
-如需启用 Gemini 评图，请在 `backend/.env` 中配置：
-
-```env
-LLM_PROVIDER=gemini
-LLM_MODEL=gemini-2.5-flash
-GEMINI_API_KEY=你的 Gemini API Key
-GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
-```
-
-Gemini 2.5 模型在后端会自动关闭额外思考参数，避免短输出上限下返回不完整的 JSON。
-
 任务书支持 TXT、DOCX 和带文字层的 PDF。PDF 解析依赖本机 `pdftotext`；扫描版 PDF 暂未接入 OCR，上传时会明确提示改用可复制文字的版本。旧版 DOC 请先另存为 DOCX。
+
+报告 PDF 使用 ReportLab 生成可选择和复制文字的矢量页面，并通过系统 `fontconfig` 选择、嵌入中文与拉丁字体；本地和服务器需要安装至少一套中文字体。
 
 ### 前端
 
 新版 React 前端：
 
 ```bash
-cd /mnt/e/claude/论文/ArchCritic/frontend-v1-replica
+cd /mnt/e/claude/codex/ArchCritic/frontend-v1-replica
 npm run dev
 ```
 
@@ -111,8 +97,8 @@ npm run dev
 本项目位于 WSL 的 Windows 挂载盘 `/mnt/e`，Vite 已启用文件轮询监听，避免热更新漏掉文件变更。修改前端后可用下面命令快速确认 `4173` 已返回新源码：
 
 ```bash
-cd /mnt/e/claude/论文/ArchCritic/frontend-v1-replica
-npm run dev:check -- "要检查的样式或文本"
+cd /mnt/e/claude/codex/ArchCritic/frontend-v1-replica
+npm run dev:check -- "要检查的样式或文本" "/src/实际修改模块.tsx"
 ```
 
 旧版演示前端不再放在当前仓库内；历史代码位置为：
@@ -125,7 +111,7 @@ npm run dev:check -- "要检查的样式或文本"
 
 生产部署采用“静态前端 + FastAPI 后端 + 独立网关”的方式：前端构建产物由 Nginx 提供，后端由 systemd 常驻运行，SQLite、上传文件和知识库统一放在 `/var/lib/archcritic/`，不随代码版本覆盖。
 
-备案审核期间，腾讯轻量云使用 `http://app.archcritic.cn:8080` 提供临时访问；该入口不占用服务器原有游戏的 80 和 3000 端口。备案完成后再启用 `api.archcritic.cn` 的 HTTPS，并把 EdgeOne 前端切换到正式接口。
+备案审核期间，腾讯轻量云使用 `http://app.archcritic.cn:8080` 提供临时访问；该入口不占用服务器原有游戏的 80 和 3000 端口。备案完成后，正式入口使用 EdgeOne Pages 托管的 `https://archcritic.cn`，后端使用轻量云上的 `https://api.archcritic.cn`。
 
 前端正式构建：
 
@@ -147,15 +133,19 @@ EdgeOne Pages 使用根目录 `edgeone.json`，构建目录为 `frontend-v1-repl
 
 ### 后端测试
 
+日常开发只运行与本次修改直接相关的一项测试，并限制为 60 秒；脚本会自动使用后端虚拟环境和正确工作目录：
+
 ```bash
-cd /mnt/e/claude/论文/ArchCritic/backend
-./.venv/bin/pytest
+cd /mnt/e/claude/codex
+bash .agents/skills/archcritic-dev-flow/scripts/archcritic-dev.sh after-backend "tests/test_target.py::test_name"
 ```
+
+只有依赖、数据库结构、认证、公共模型或核心路由发生跨模块变化时，才从后端目录运行完整测试。测试超时后先缩小到单项，不重复运行完整文件。
 
 ### 私有评分基准
 
 ```bash
-cd /mnt/e/claude/论文/ArchCritic/backend
+cd /mnt/e/claude/codex/ArchCritic/backend
 ./.venv/bin/python scripts/benchmark_review.py prepare
 ./.venv/bin/python scripts/benchmark_review.py run --round formal-round1 --provider dashscope --model qwen3.6-plus --workers 2
 ./.venv/bin/python scripts/benchmark_review.py report --round formal-round1 --model qwen3.6-plus
@@ -166,7 +156,7 @@ cd /mnt/e/claude/论文/ArchCritic/backend
 上述 `run/report/export` 命令只用于复现 2026-07-17 的历史六样本实验。新开发集、验证集和最终测试必须使用下列严格流程：
 
 ```bash
-cd /mnt/e/claude/论文/ArchCritic/backend
+cd /mnt/e/claude/codex/ArchCritic/backend
 ./.venv/bin/python scripts/goal_asset_audit.py
 ./.venv/bin/python scripts/benchmark_review.py blind-prepare --source-root ../标注基准集/.prepared --output-root ../标注基准集/.blind-workspace/model-inputs
 ./.venv/bin/python scripts/benchmark_review.py blind-run --test-id <冻结测试编号> --input-root ../标注基准集/.blind-workspace/model-inputs
@@ -178,16 +168,16 @@ cd /mnt/e/claude/论文/ArchCritic/backend
 2026-07-27 九样本四条件论文实验使用下列入口。`prepare`、`run`、`judge-local`、`metrics` 和 `gate` 分阶段执行；已经冻结的正式结果不得覆盖。
 
 ```bash
-cd /mnt/e/claude/论文/ArchCritic
-./.venv/bin/python backend/scripts/paper_experiment.py status
-./.venv/bin/python backend/scripts/build_paper_experiment_report.py
-./.venv/bin/python -m pytest backend/tests/test_paper_experiment.py backend/tests/test_blind_protocol.py -q
+cd /mnt/e/claude/codex/ArchCritic
+backend/.venv/bin/python backend/scripts/paper_experiment.py status
+backend/.venv/bin/python backend/scripts/build_paper_experiment_report.py
+backend/.venv/bin/python -m pytest backend/tests/test_paper_experiment.py backend/tests/test_blind_protocol.py -q
 ```
 
 内容人工复核与知识专项使用下列命令。`apply` 只有在复核表逐条由真实人工确认后才允许执行；当前不要运行正式 `run`：
 
 ```bash
-cd /mnt/e/claude/论文/ArchCritic/backend
+cd /mnt/e/claude/codex/ArchCritic/backend
 ./.venv/bin/python scripts/knowledge_content_review.py export
 ./.venv/bin/python scripts/knowledge_content_review.py validate
 ./.venv/bin/python scripts/knowledge_content_review.py apply --confirm-human-reviewed
@@ -199,34 +189,44 @@ cd /mnt/e/claude/论文/ArchCritic/backend
 
 ### 前端测试
 
+日常样式、文案和局部交互修改使用快速流程，一次完成基础检查、目标模块热更新和 4173 健康检查：
+
 ```bash
-cd /mnt/e/claude/论文/ArchCritic/frontend-v1-replica
+cd /mnt/e/claude/codex
+bash .agents/skills/archcritic-dev-flow/scripts/archcritic-dev.sh after-frontend "目标标记" "/src/实际修改模块.tsx"
+```
+
+类型结构、依赖、构建配置或跨模块核心流程变化时，再额外运行：
+
+```bash
+cd /mnt/e/claude/codex/ArchCritic/frontend-v1-replica
 npm run typecheck
 npm test
 npm run build
-npm run dev:check -- "text-[10px] font-extrabold"
 ```
 
 浏览器完整交互验收脚本位于 `backend/scripts/verify_frontend_v1_browser.ps1`。
 
 ## 搜索记录
 
+- 2026-09-02 复核腾讯 EdgeOne Pages 官方当前说明：GitHub 仓库仍可自动构建部署，项目设置可绑定根域名或子域名；自定义域名需要按控制台给出的记录更新 DNS。当前项目继续使用 GitHub `master` 自动部署，并把 `archcritic.cn` 作为正式入口。
+- 2026-09-01 核对阿里云百炼官方模型说明：`qwen3.8-max` 与 `qwen3.7-plus` 均支持文字、图片和结构化输出，继续使用现有百炼兼容接口即可；产品据此把前者固定用于评图和 Agent，后者固定用于两类助手。
+- 2026-08-31 核对阿里云百炼官方说明：百炼兼容 Chat Completions 可通过 `extra_body={"enable_search": true}` 开启联网搜索，当前知识卡拓展和报告问题解释继续在千问模式下按需联网检索。
 - 2026-08-23 核对腾讯 EdgeOne Makers 官方 `edgeone.json` 与构建指南：仓库根目录配置可以覆盖安装命令、构建命令、Node.js 版本和输出目录；Vite 静态站点必须把输出目录指向实际包含 `index.html` 的 `dist`，单页应用可使用 `/*` 到 `/index.html` 的 SPA 回退。当前项目据此固定使用 Node.js 22.11.0、`npm ci`、`npm run build` 和 `frontend-v1-replica/dist`。
-- 2026-05-19 查询 Google Gemini 官方文档：Gemini API 支持 OpenAI 兼容调用，Python OpenAI 客户端只需把 `api_key` 改为 Gemini Key，把 `base_url` 改为 `https://generativelanguage.googleapis.com/v1beta/openai/`，模型名可使用 `gemini-2.5-flash` 等 Gemini 模型。
-- 2026-05-19 实测 Gemini 配置：`gemini-2.5-flash` 非流式和流式调用均可返回结构化评图结果；需要关闭额外思考参数，否则可能出现 JSON 被截断。
-- 2026-05-19 查询并实测 Gemini 3.1 Pro：官方模型名为 `gemini-3.1-pro-preview`；该模型是 Gemini API 当前面向复杂任务、多模态理解和推理的最强模型之一，但官方价格页显示 Free Tier 不可用。本地 API Key 实测调用返回 429，提示 `gemini-3.1-pro` 免费层请求和输入 token 限额均为 0，需要开通计费后使用。
 
 ## 已完成功能列表
 
 - 实验性视觉评分锚点：已从同类课程原始图纸建立低 3、中 4、高 4 的匿名锚点集，最终 Agent 可记录档位、最近锚点、比较依据和校准分数；三案例测试未改善 MAE 和分档排序，因此当前不作为产品默认评分。
-- 本地账户与数据隔离：支持首次注册、登录、退出、修改显示名称和密码；项目、提交、上传文件、历史报告均按账户隔离，密码不保存明文。
+- 本地账户与数据隔离：支持首次注册、登录、确认退出、修改昵称和密码；账号使用 3–12 位英文字母或数字，昵称支持 1–12 个中英文字符，表单会在离开输入栏时即时提示错误。项目、提交、上传文件、历史报告均按账户隔离，密码不保存明文。
+- 账户帮助中心：新账户首次进入工作台时自动展示一次遮罩式分步指引，之后可从帮助菜单手动重看；同时提供真实操作常见问题和可写入后台数据库的问题反馈表单。
 - 真实任务书评分：上传时抽取任务书正文，识别课程重点和“不作要求”等弱化条件，结合设计阶段与年级生成动态评分权重，并将依据随历史报告保存。
 - 三阶段多 Agent：概念阶段启用场地、形式、概念和综合评审；方案阶段启用功能、场地、形式、结构和综合评审；图纸阶段启用图面表达、功能、场地、形式、结构和综合评审。
-- 真实报告展示：报告页和历史页按后端真实维度、分数、任务书权重和 Agent 数据渲染；报告缺失或不完整时显示明确状态，不再注入虚构评分。
+- 真实报告展示：报告页和历史页按后端真实维度、分数、任务书权重和 Agent 数据渲染；支持将当前真实结果导出为排版后的多页 PDF，报告缺失或不完整时显示明确状态，不再注入虚构评分。
 - 工程化重构：提交接口、评图逻辑、工作区、流程页、报告页、侧栏和样式均已按职责拆分，当前前后端业务代码单文件均不超过 500 行。
 - 本地文件生命周期：图纸与任务书必须登录后按所属账户访问；删除项目、版本或文件时会清理不再被其他版本引用的本地文件。
 - 新版 React 前端迁移：接通草稿、阶段与 Agent、图纸、任务书、流式评图、暂停、报告详情、知识追溯、历史恢复、项目继承、报告导出和追问；旧版前端已归档到仓库外历史目录。
 - 新版项目侧栏：同名项目会归并展示，按提交时间生成 V1、V2 等历史版本；首页和侧栏共用项目状态，切换页面时保留已有卡片。
+- 图纸辅助拆分与无缝加载：优先识别合成平面和技术图中的完整分区，原图始终保留且辅助图数量受限；项目摘要、工作台快照和报告缓存使用同一份后端状态。
 - 新版资料管理接口：支持图纸类型与说明修改、单张删除、批量删除、任务书上传和继承已有项目最近一次资料。
 - 新版浏览器验收脚本：可按真实页面顺序完成保存、提交、评图、报告详情、知识追溯、历史和追问，并保存报告页截图。
 - 后端健康检查接口。
@@ -239,7 +239,7 @@ npm run dev:check -- "text-[10px] font-extrabold"
 - Wiki 知识库检索接口：按项目类型、阶段、图纸类型和设计说明筛选相关知识卡片。
 - 知识库学习浏览接口：读取最终版 Markdown 目录和单卡详情，目录阶段不扫描全部图片，打开案例后才按正文顺序读取图片。
 - 知识库依据快照：保存每次评图实际使用的依据，历史报告不重新匹配新的知识库内容。
-- 演示评图结果接口；配置 OpenAI、阿里云百炼或 Gemini 后同一接口会调用真实功能与流线 Agent。
+- 评图结果接口当前统一调用阿里云百炼千问模型；内部演示模式只用于开发检查。
 - 功能与流线 Agent v1：按功能满足、功能分区、流线分析、平面丰富性四项评分，要求模型引用知识卡片编号，并标注图纸识别不确定内容。
 - 阶段化多 Agent v1：功能、场地、几何形式、结构、设计概念、图面表达和综合评审 Agent 已接入真实模型，按阶段白名单顺序评审并输出统一报告。
 - 前端多 Agent 过程展示：对话区和评审矩阵会显示当前阶段实际 Agent 的头像、调用顺序和完成状态。
@@ -250,8 +250,8 @@ npm run dev:check -- "text-[10px] font-extrabold"
 - 百炼临时 OSS 图纸链路：上传本地图纸获得模型可访问 URL，解决 base64 图片直传导致的超时问题。
 - 百炼调用稳定性兜底：临时 OSS 上传失败会自动重试，流式输出中断或 JSON 不完整时会尝试非流式结构化评图。
 - 右侧 AI 对话流式输出：新增流式评图接口，前端能实时看到模型生成内容，并在结束后渲染报告。
-- 模型选择控件：前端可在开始评图前选择千问、Gemini 或演示模式。
-- 知识库追溯卡片：每条知识依据可点击查看对应 Markdown 内容摘要和可引用观点。
+- 固定模型展示：确认提交页和报告助手仅显示当前千问模型，不再提供模型切换控件。
+- 知识库追溯卡片：每条知识依据可点击查看与知识库详情页相同的完整 Markdown 正文和图片；旧报告详情读取失败时保留当次快照兜底。
 - 历史版本卡片：完成评图后自动进入项目历史，点击“查看历史版本”可查看并切换到旧提交的报告状态。
 - 高清图纸上传策略：默认保留原图，只有超过约 12MB 的图纸才缩放到约 4000px 长边，减少小字和线条识别损失。
 - 事实识别约束：评图前要求模型先识别楼梯、电梯、卫生间、主入口、车库入口、报告厅和服务台等关键事实，错误的“未看清”结论不会直接进入必须修改。

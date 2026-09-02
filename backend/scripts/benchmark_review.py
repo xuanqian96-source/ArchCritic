@@ -44,7 +44,7 @@ def main() -> None:
     run_parser = subparsers.add_parser("run", help="运行一轮真实多 Agent 评图")
     run_parser.add_argument("--round", required=True)
     run_parser.add_argument("--provider", default="dashscope")
-    run_parser.add_argument("--model", default="qwen3.6-plus")
+    run_parser.add_argument("--model", default="qwen3.8-max")
     run_parser.add_argument("--workers", type=int, default=2)
     run_parser.add_argument("--cases", nargs="*")
     run_parser.add_argument(
@@ -62,7 +62,7 @@ def main() -> None:
 
     report_parser = subparsers.add_parser("report", help="统计一轮结果")
     report_parser.add_argument("--round", required=True)
-    report_parser.add_argument("--model", default="qwen3.6-plus")
+    report_parser.add_argument("--model", default="qwen3.8-max")
     report_parser.add_argument("--expected", type=int, default=6)
 
     compare_parser = subparsers.add_parser("compare", help="比较两轮指标")
@@ -96,7 +96,7 @@ def main() -> None:
     )
     blind_run_parser.add_argument("--results-root", type=Path)
     blind_run_parser.add_argument("--provider", default="dashscope")
-    blind_run_parser.add_argument("--model", default="qwen3.6-plus")
+    blind_run_parser.add_argument("--model", default="qwen3.8-max")
     blind_run_parser.add_argument("--workers", type=int, default=1)
     blind_run_parser.add_argument("--cases", nargs="*")
     blind_run_parser.add_argument(
@@ -112,7 +112,7 @@ def main() -> None:
     blind_judge_parser.add_argument("--private-answers", type=Path, required=True)
     blind_judge_parser.add_argument("--judgments-root", type=Path, required=True)
     blind_judge_parser.add_argument("--provider", default="dashscope")
-    blind_judge_parser.add_argument("--model", default="qwen3.6-plus")
+    blind_judge_parser.add_argument("--model", default="qwen3.8-max")
 
     args = parser.parse_args()
     if args.command == "prepare":

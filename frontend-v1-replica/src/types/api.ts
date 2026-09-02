@@ -62,6 +62,7 @@ export interface KnowledgeImage {
 
 export interface KnowledgeReference {
   reference_id: string;
+  library_item_id: string;
   title: string;
   source_type: string;
   excerpt: string;
@@ -117,6 +118,22 @@ export interface SubmissionHistory {
   dimension_scores?: Record<string, number>;
 }
 
+export interface ProjectOverview {
+  project: Project;
+  submissions: Submission[];
+  history: SubmissionHistory[];
+}
+
+export interface SubmissionWorkspace {
+  project: Project;
+  submission: Submission;
+  drawings: DrawingFile[];
+  attachments: Attachment[];
+  history: SubmissionHistory[];
+  report: OverallReport | null;
+  chat_messages: ChatMessage[];
+}
+
 export interface EvaluationStreamEvent {
   event: "status" | "stage" | "agent" | "delta" | "reasoning" | "final" | "error";
   payload: Record<string, unknown>;
@@ -126,5 +143,9 @@ export interface ChatMessage {
   id?: number;
   role: "user" | "assistant";
   content: string;
+  tool?: "none" | "drawing_review" | "issue_explanation" | "knowledge_recommendation";
+  citations?: { id: string; title: string }[];
+  report_updated?: boolean;
+  updated_report?: OverallReport | null;
   created_at?: string | null;
 }

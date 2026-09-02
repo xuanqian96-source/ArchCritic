@@ -1,26 +1,134 @@
 """报告与追问接口，负责评图结果读取、导出、演示评图和报告问答。"""
 
 import asyncio
+import json
+import logging
+import threading
+from typing import Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, Response, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
+from starlette.concurrency import run_in_threadpool
 
 from app.agents.function_agent import build_function_agent_context
 from app.agents.scheme_review import is_multi_agent_stage
 from app.config import get_settings
-from app.database import get_db
+from app.database import get_db, get_session_factory
 from app.llm.client import get_llm_client
 from app.models import AgentEvaluation, ChatMessage, OverallReport, Submission, User
-from app.schemas import ChatMessageCreate, ChatMessageRead, KnowledgeReferenceRead, OverallReportRead, SubmissionRead
+from app.schemas import ChatMessageCreate, ChatMessageRead, KnowledgeReferenceRead, OverallReportRead, SubmissionRead, SubmissionWorkspaceRead
 from app.services.auth import get_current_user, require_owned_submission
+from app.services.drawing_preprocess import add_preprocessed_model_drawings
+from app.services.report_assistant import apply_report_assistant_update, build_report_assistant_fallback, generate_report_assistant_answer
+from app.services.report_pdf import build_report_pdf, build_report_pdf_snapshot
 from app.routers.submission_common import CANCELLED_SUBMISSIONS, REAL_LLM_PROVIDERS, resolve_llm_model, resolve_llm_provider
 from app.routers.submission_crud import refresh_submission_attachments
+from app.routers.projects import load_project_history_items
 from app.routers.submission_report_data import build_model_error_message, build_report_response, load_report_reference_snapshots, load_submission_wiki_references, save_report_data
 from app.routers.submission_stream import ensure_dashscope_model_file_urls
 
 router = APIRouter(prefix="/api/submissions", tags=["submissions"])
+LOGGER = logging.getLogger(__name__)
+
+
+def _process_report_chat_in_worker(
+    submission_id: int,
+    content: str,
+    tool: str,
+    on_delta: Callable[[str], None] | None = None,
+) -> dict:
+    """在独立会话中生成、修订并保存回答，断开页面后仍可完成落库。"""
+    session_factory = get_session_factory()
+    with session_factory() as worker_db:
+        submission = worker_db.execute(
+            select(Submission)
+            .options(
+                selectinload(Submission.project),
+                selectinload(Submission.drawing_files),
+                selectinload(Submission.attachments),
+            )
+            .where(Submission.id == submission_id)
+        ).scalar_one()
+        report = worker_db.execute(
+            select(OverallReport).where(OverallReport.submission_id == submission_id)
+        ).scalar_one()
+        assistant_model = get_settings().llm_assistant_model
+        ensure_dashscope_model_file_urls(
+            worker_db, list(submission.drawing_files), assistant_model
+        )
+        try:
+            result = generate_report_assistant_answer(
+                submission, report, content, tool, worker_db, on_delta,
+            )
+        except Exception:
+            LOGGER.exception("报告助手后台处理失败，已使用报告内容生成稳定回答")
+            result = build_report_assistant_fallback(report, content, tool)
+        report_updated = apply_report_assistant_update(
+            report, result.get("report_update"), content, worker_db,
+        )
+        response = ChatMessage(
+            submission_id=submission_id,
+            role="assistant",
+            content=str(result["answer"]),
+            tool=tool,
+            citations=result.get("citations") or [],
+            report_updated=report_updated,
+        )
+        worker_db.add(response)
+        worker_db.commit()
+        worker_db.refresh(response)
+        updated_report = None
+        if report_updated:
+            evaluations = list(worker_db.execute(
+                select(AgentEvaluation).where(AgentEvaluation.submission_id == submission_id)
+            ).scalars())
+            updated_report = build_report_response(report, evaluations, submission, worker_db)
+        return ChatMessageRead(
+            id=response.id,
+            role=response.role,
+            content=response.content,
+            tool=response.tool,
+            citations=response.citations,
+            report_updated=response.report_updated,
+            updated_report=updated_report,
+            created_at=response.created_at,
+        ).model_dump(mode="json")
+
+
+@router.get("/{submission_id}/workspace", response_model=SubmissionWorkspaceRead)
+async def get_submission_workspace(
+    submission_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> SubmissionWorkspaceRead:
+    """一次返回进入工作台所需的项目、文件、历史和报告。"""
+    submission = require_owned_submission(db, submission_id, user)
+    refresh_submission_attachments(db, list(submission.attachments))
+    overall_report = db.execute(
+        select(OverallReport).where(OverallReport.submission_id == submission_id)
+    ).scalar_one_or_none()
+    report = None
+    if overall_report is not None:
+        evaluations = list(db.execute(
+            select(AgentEvaluation).where(AgentEvaluation.submission_id == submission_id)
+        ).scalars())
+        report = build_report_response(overall_report, evaluations, submission, db)
+    messages = list(db.execute(
+        select(ChatMessage)
+        .where(ChatMessage.submission_id == submission_id)
+        .order_by(ChatMessage.id.asc())
+    ).scalars())
+    return SubmissionWorkspaceRead(
+        project=submission.project,
+        submission=submission,
+        drawings=list(submission.drawing_files),
+        attachments=list(submission.attachments),
+        history=load_project_history_items(db, submission.project_id),
+        report=report,
+        chat_messages=messages,
+    )
 
 @router.post("/{submission_id}/cancel-evaluation", response_model=SubmissionRead)
 async def cancel_submission_evaluation(
@@ -37,14 +145,24 @@ async def cancel_submission_evaluation(
     return submission
 
 
-@router.get("/{submission_id}/report/export", response_class=PlainTextResponse)
+@router.get("/{submission_id}/report/export")
 async def export_submission_report(
     submission_id: int,
+    format: str = Query(default="pdf", pattern="^(pdf|markdown)$"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> PlainTextResponse:
-    """导出当前报告为 Markdown 文件。"""
+) -> Response:
+    """导出当前报告，默认生成适合阅读和保存的 PDF。"""
+    submission = require_owned_submission(db, submission_id, user)
     report = await get_submission_report(submission_id, db, user)
+    if format == "pdf":
+        pdf_submission = build_report_pdf_snapshot(submission)
+        pdf_bytes = await run_in_threadpool(build_report_pdf, pdf_submission, report)
+        return Response(
+            pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="archcritic-report-{submission_id}.pdf"'},
+        )
     sections = [
         f"# ArchCritic 评图报告\n\n综合评分：{report.overall_score}\n\n{report.summary}",
         "## 必须修改\n" + "\n".join(f"- {item}" for item in report.must_fix),
@@ -58,107 +176,82 @@ async def export_submission_report(
     )
 
 
-def build_chat_fallback_answer(report: OverallReport | None, content: str) -> str:
-    """根据已生成报告构造稳定的本地追问回答。"""
-    if report is None:
-        return "报告仍在生成中，请稍后再继续追问。"
-    if "必须" in content or "修改" in content:
-        items = report.must_fix[:3] or ["当前报告没有明确列出必须修改项。"]
-        return "本轮必须修改项：" + "；".join(items)
-    items = report.should_improve[:2] or report.must_fix[:2] or ["建议先复核总评中提到的主要问题。"]
-    return f"结合本次评分，{report.summary} 建议先复核：" + "；".join(items)
-
-
-def build_chat_prompt(
-    submission: Submission,
-    report: OverallReport,
-    content: str,
-    db: Session,
-) -> str:
-    """把项目、报告和追问整理为模型可直接回答的文本。"""
-    evaluations = db.execute(
-        select(AgentEvaluation).where(AgentEvaluation.submission_id == submission.id)
-    ).scalars().all()
-    dimension_lines = [
-        f"- {item.dimension}：{round(item.score)}分。{item.summary}"
-        for item in evaluations[:6]
-    ]
-    return "\n".join([
-        f"项目名称：{submission.project.name}",
-        f"设计阶段：{submission.design_stage}",
-        f"综合评分：{round(report.overall_score)}，等级：{report.grade}",
-        f"总评：{report.summary}",
-        "主要评分维度：",
-        "\n".join(dimension_lines) or "- 暂无专项评分。",
-        "必须修改：" + "；".join(report.must_fix[:5]),
-        "重点优化：" + "；".join(report.should_improve[:5]),
-        "用户追问：" + content,
-    ])
-
-
-def generate_chat_answer(
-    submission: Submission,
-    report: OverallReport | None,
-    payload: ChatMessageCreate,
-    db: Session,
-) -> str:
-    """优先调用用户选择的模型回答，失败时回退到稳定本地回答。"""
-    fallback = build_chat_fallback_answer(report, payload.content)
-    if report is None:
-        return fallback
-    try:
-        provider = resolve_llm_provider(payload.model_provider or submission.selected_model_provider)
-        model = resolve_llm_model(provider, payload.model_name or submission.selected_model_name)
-        if provider not in REAL_LLM_PROVIDERS:
-            return fallback
-        llm_client = get_llm_client(provider, model)
-        create_kwargs = {
-            "model": llm_client.model,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "你是 ArchCritic 的评图报告助手。只根据给定报告回答，语气简洁，必须用中文。可以用 **加粗** 标注重点，但不要使用复杂 Markdown 表格。",
-                },
-                {"role": "user", "content": build_chat_prompt(submission, report, payload.content, db)},
-            ],
-            "temperature": 0.3,
-            "max_tokens": min(llm_client.max_tokens, 800),
-        }
-        if llm_client.extra_body:
-            create_kwargs["extra_body"] = llm_client.extra_body
-        if llm_client.reasoning_effort:
-            create_kwargs["reasoning_effort"] = llm_client.reasoning_effort
-        try:
-            response = llm_client.client.chat.completions.create(**create_kwargs)
-        except TypeError:
-            create_kwargs.pop("extra_body", None)
-            create_kwargs.pop("reasoning_effort", None)
-            response = llm_client.client.chat.completions.create(**create_kwargs)
-        answer = response.choices[0].message.content if response.choices else ""
-        return answer.strip() or fallback
-    except Exception:
-        return fallback
-
-
 @router.post("/{submission_id}/chat", response_model=ChatMessageRead)
 async def create_chat_message(
     submission_id: int,
     payload: ChatMessageCreate,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> ChatMessage:
-    """保存报告追问，并按当前报告给出可核对的回答。"""
+) -> ChatMessageRead:
+    """保存报告追问，并结合报告、知识库和当前图纸回答。"""
     submission = require_owned_submission(db, submission_id, user)
     report = db.execute(
         select(OverallReport).where(OverallReport.submission_id == submission_id)
     ).scalar_one_or_none()
-    answer = generate_chat_answer(submission, report, payload, db)
-    db.add(ChatMessage(submission_id=submission_id, role="user", content=payload.content))
-    response = ChatMessage(submission_id=submission_id, role="assistant", content=answer)
-    db.add(response)
+    if report is None:
+        raise HTTPException(status_code=409, detail="报告仍在生成中，请稍后再继续追问。")
+    # 先保存用户问题，切页或模型等待期间重新进入报告也不会丢失。
+    db.add(ChatMessage(
+        submission_id=submission_id, role="user", content=payload.content.strip(), tool=payload.tool,
+    ))
     db.commit()
-    db.refresh(response)
-    return response
+    result = await run_in_threadpool(
+        _process_report_chat_in_worker,
+        submission_id, payload.content.strip(), payload.tool,
+    )
+    return ChatMessageRead.model_validate(result)
+
+
+@router.post("/{submission_id}/chat/stream")
+async def stream_chat_message(
+    submission_id: int,
+    payload: ChatMessageCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    """流式返回报告回答，最终结果和可能的报告修订仍完整保存。"""
+    submission = require_owned_submission(db, submission_id, user)
+    report = db.execute(
+        select(OverallReport).where(OverallReport.submission_id == submission_id)
+    ).scalar_one_or_none()
+    if report is None:
+        raise HTTPException(status_code=409, detail="报告仍在生成中，请稍后再继续追问。")
+    db.add(ChatMessage(
+        submission_id=submission_id, role="user", content=payload.content.strip(), tool=payload.tool,
+    ))
+    db.commit()
+
+    async def event_stream():
+        events: asyncio.Queue[tuple[str, object]] = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+
+        def emit(event: str, value: object) -> None:
+            loop.call_soon_threadsafe(events.put_nowait, (event, value))
+
+        def run_model() -> None:
+            try:
+                result = _process_report_chat_in_worker(
+                    submission_id, payload.content.strip(), payload.tool,
+                    lambda value: emit("delta", value),
+                )
+                emit("final", result)
+            except Exception:
+                LOGGER.exception("报告助手流式处理失败")
+                emit("error", "AI 助手调用失败，请稍后重试。")
+
+        # 独立守护线程不会随页面停止读取而中断，最终回答仍会保存到会话。
+        threading.Thread(target=run_model, name=f"report-chat-{submission_id}", daemon=True).start()
+        while True:
+            event, data = await events.get()
+            yield f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+            if event in {"final", "error"}:
+                break
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/{submission_id}/chat/messages", response_model=list[ChatMessageRead])
@@ -218,6 +311,7 @@ async def evaluate_submission_demo(
             references,
             list(submission.attachments),
         )
+        add_preprocessed_model_drawings(payload, llm_provider, llm_model)
     else:
         payload = {
             "project_name": submission.project.name,

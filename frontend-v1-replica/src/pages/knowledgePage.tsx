@@ -4,7 +4,11 @@ import type { PageProps } from "../App";
 import { apiUrl } from "../api/client";
 import { getCachedKnowledgeDetail, getCachedKnowledgeLibrary, getKnowledgeDetail, getKnowledgeLibrary, prefetchKnowledgeDetail, type KnowledgeAssistantResult, type KnowledgeImage, type KnowledgeKind, type KnowledgeLibraryDetail, type KnowledgeLibraryItem, type KnowledgeLibraryPayload } from "../api/knowledge";
 import { Button, Sidebar, ZoomableImageStage } from "../components";
+import { clearReportKnowledgeContext, readReportKnowledgeContext, saveReportKnowledgeContext, type ReportKnowledgeContext } from "../state/reportKnowledgeContext";
+import { useWorkspace } from "../state/workspace";
 import { KnowledgeAssistant } from "./knowledgeAssistant";
+import { KnowledgeQuiz } from "./knowledgeQuiz";
+import { ReportAssistant } from "./reportAssistant";
 
 type LibraryTab = "all" | KnowledgeKind;
 type LibraryView = "overview" | "detail";
@@ -16,15 +20,21 @@ const EMPTY_LIBRARY: KnowledgeLibraryPayload = {
   items: [],
   totals: { all: 0, knowledge: 0, case: 0 },
   levels: [],
+  knowledge_categories: [],
+  difficulties: [],
   building_types: [],
 };
 const SEARCH_HISTORY_KEY = "archcritic-knowledge-search-history";
 
 // 渲染知识库主页面，并在总览与深度阅读之间切换。
 export function KnowledgePage({ go }: PageProps) {
+  const { chatMessages, report, sendQuestion, submission } = useWorkspace();
   const initialLibrary = getCachedKnowledgeLibrary();
+  const [reportContext, setReportContext] = useState<ReportKnowledgeContext | null>(() => readReportKnowledgeContext());
   const [library, setLibrary] = useState<KnowledgeLibraryPayload>(initialLibrary ?? EMPTY_LIBRARY);
   const [view, setView] = useState<LibraryView>("overview");
+  const [quizOpen, setQuizOpen] = useState(false);
+  const [quizConfirmOpen, setQuizConfirmOpen] = useState(false);
   const [tab, setTab] = useState<LibraryTab>("all");
   const [category, setCategory] = useState("全部");
   const [overviewQuery, setOverviewQuery] = useState("");
@@ -35,7 +45,7 @@ export function KnowledgePage({ go }: PageProps) {
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState("");
   const [preview, setPreview] = useState<KnowledgeImage | null>(null);
-  const [assistantResult, setAssistantResult] = useState<KnowledgeAssistantResult | null>(null);
+  const [assistantResult, setAssistantResult] = useState<KnowledgeAssistantResult | null>(() => reportContext ? buildReportRecommendationResult(reportContext) : null);
   const [assistantQuery, setAssistantQuery] = useState("");
   const overviewPositionRef = useRef<OverviewPosition>({ scrollTop: 0, itemId: "", itemOffset: 0 });
   const assistantSnapshotRef = useRef<AssistantBrowseSnapshot | null>(null);
@@ -47,6 +57,41 @@ export function KnowledgePage({ go }: PageProps) {
       .catch((loadError) => active && setError(loadError instanceof Error ? loadError.message : "知识库读取失败。"))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!reportContext || !submission) return;
+    if (reportContext.submissionId !== submission.id) {
+      clearReportKnowledgeContext();
+      setReportContext(null);
+      setAssistantResult(null);
+    }
+  }, [reportContext, submission]);
+
+  useEffect(() => {
+    if (!reportContext) return;
+    const latest = [...chatMessages].reverse().find((message) => message.role === "assistant" && message.tool === "knowledge_recommendation" && message.citations?.length);
+    if (!latest?.citations?.length) return;
+    if (!latest.id || latest.id <= (reportContext.lastMessageId ?? 0)) return;
+    const citationsKey = latest.citations.map((item) => item.id).join("|");
+    const currentKey = reportContext.citations.map((item) => item.id).join("|");
+    if (citationsKey === currentKey) return;
+    const next = { ...reportContext, citations: latest.citations, lastMessageId: latest.id, createdAt: Date.now() };
+    saveReportKnowledgeContext(next.submissionId, next.citations, next.lastMessageId);
+    setReportContext(next);
+    setAssistantResult(buildReportRecommendationResult(next));
+    setTab("all");
+    setCategory("全部");
+    setCatalogQuery("");
+    setView("overview");
+  }, [chatMessages, reportContext]);
+
+  useEffect(() => {
+    const pendingItemId = window.localStorage.getItem("archcritic-open-knowledge-item");
+    if (!pendingItemId) return;
+    window.localStorage.removeItem("archcritic-open-knowledge-item");
+    setSelectedId(pendingItemId);
+    setView("detail");
   }, []);
 
   useEffect(() => {
@@ -69,15 +114,16 @@ export function KnowledgePage({ go }: PageProps) {
   const catalogSearchItems = useMemo(() => filterItems(assistantBaseItems, "all", "全部", catalogQuery.trim().toLowerCase()), [assistantBaseItems, catalogQuery]);
   const categories = useMemo(() => {
     const allCategories = tab === "knowledge" ? library.levels : tab === "case" ? library.building_types : [...library.levels, ...library.building_types];
-    if (!activeOverviewQuery.trim() || tab === "all") return allCategories;
+    if (tab === "all") return allCategories;
     const resultCategoryNames = new Set(
       overviewSearchItems
         .filter((item) => item.kind === tab)
-        .map((item) => tab === "knowledge" ? item.level_label : item.category),
+        .map((item) => item.category),
     );
+    if (!assistantResult && !activeOverviewQuery.trim()) return allCategories;
     return allCategories.filter((item) => resultCategoryNames.has(item));
-  }, [activeOverviewQuery, library.building_types, library.levels, overviewSearchItems, tab]);
-  const displayedCategory = activeOverviewQuery.trim() && category !== "全部" && !categories.includes(category) ? "全部" : category;
+  }, [activeOverviewQuery, assistantResult, library.building_types, library.levels, overviewSearchItems, tab]);
+  const displayedCategory = category !== "全部" && !categories.includes(category) ? "全部" : category;
   const overviewItems = useMemo(() => filterItems(overviewSearchItems, tab, displayedCategory, ""), [displayedCategory, overviewSearchItems, tab]);
   const catalogItems = useMemo(() => sortLibraryItems(filterItems(catalogSearchItems, tab, "全部", ""), tab === "all"), [catalogSearchItems, tab]);
   const overviewCounts = useMemo(() => countKinds(overviewSearchItems), [overviewSearchItems]);
@@ -131,6 +177,11 @@ export function KnowledgePage({ go }: PageProps) {
 
   // 退出 AI 推荐后精确恢复进入前的标签、分类、搜索和滚动位置。
   const exitAssistantResults = () => {
+    if (reportContext) {
+      clearReportKnowledgeContext();
+      go("report");
+      return;
+    }
     const snapshot = assistantSnapshotRef.current;
     if (snapshot) {
       setTab(snapshot.tab);
@@ -149,20 +200,21 @@ export function KnowledgePage({ go }: PageProps) {
     <div className="font-chat relative h-full w-full bg-[#f4f6f8]">
       <Sidebar go={go} />
       <main className="knowledge-workspace" aria-live="polite">
-        {view === "overview" ? (
-          <OverviewView library={library} searchItems={overviewSearchItems} counts={overviewCounts} items={overviewItems} loading={loading} error={error} tab={tab} category={displayedCategory} categories={categories} query={activeOverviewQuery} assistantResult={assistantResult} restorePosition={overviewPositionRef.current} onPositionChange={(position) => { overviewPositionRef.current = position; }} onQuery={assistantResult ? setAssistantQuery : setOverviewQuery} onExitAssistant={exitAssistantResults} onAdjustAssistant={() => window.dispatchEvent(new Event("open-knowledge-assistant"))} onTab={selectTab} onCategory={setCategory} onOpen={(itemId, position) => { overviewPositionRef.current = position; openItem(itemId, activeOverviewQuery); }} />
+        {quizOpen ? <section className="knowledge-view knowledge-view-active"><KnowledgeHeader eyebrow="按分类和难度检验你的知识掌握程度" action={<Button kind="white" className="report-top-action-button" onClick={() => setQuizOpen(false)}>返回知识库</Button>} /><KnowledgeQuiz onOpenCard={(itemId) => { setQuizOpen(false); openItem(itemId); }} /></section> : view === "overview" ? (
+          <OverviewView library={library} searchItems={overviewSearchItems} counts={overviewCounts} items={overviewItems} loading={loading} error={error} tab={tab} category={displayedCategory} categories={categories} query={activeOverviewQuery} assistantResult={assistantResult} assistantReturnLabel={reportContext ? "返回报告界面" : "返回原总览"} restorePosition={overviewPositionRef.current} onPositionChange={(position) => { overviewPositionRef.current = position; }} onQuery={assistantResult ? setAssistantQuery : setOverviewQuery} onExitAssistant={exitAssistantResults} onAdjustAssistant={() => window.dispatchEvent(new Event(reportContext ? "open-report-assistant" : "open-knowledge-assistant"))} onQuiz={() => setQuizConfirmOpen(true)} onTab={selectTab} onCategory={setCategory} onOpen={(itemId, position) => { overviewPositionRef.current = position; openItem(itemId, activeOverviewQuery); }} />
         ) : (
-          <DetailView counts={catalogCounts} searchItems={catalogSearchItems} items={catalogItems} detail={visibleDetail} selectedId={selectedId} loading={detailLoading} tab={tab} query={catalogQuery} itemById={itemById} onQuery={setCatalogQuery} onClearQuery={clearDetailSearch} onTab={selectTab} onOpen={openItem} onRelated={openRelated} onPreview={setPreview} onBack={() => { setCatalogQuery(""); setView("overview"); }} />
+          <DetailView counts={catalogCounts} searchItems={catalogSearchItems} items={catalogItems} detail={visibleDetail} selectedId={selectedId} loading={detailLoading} tab={tab} query={catalogQuery} itemById={itemById} hideEmptyTypes={Boolean(assistantResult)} backLabel={assistantResult ? "返回推荐总览" : "返回知识库总览"} onQuery={setCatalogQuery} onClearQuery={clearDetailSearch} onTab={selectTab} onOpen={openItem} onRelated={openRelated} onPreview={setPreview} onBack={() => { setCatalogQuery(""); setView("overview"); }} />
         )}
       </main>
-      <KnowledgeAssistant view={view} tab={tab} category={displayedCategory} currentItem={view === "detail" ? itemById.get(selectedId) ?? null : null} resultSetId={assistantResult?.result_set_id ?? null} onResult={applyAssistantResult} onOpenItem={(itemId) => { if (itemById.has(itemId)) openItem(itemId, activeOverviewQuery); }} />
+      {reportContext && submission ? <ReportAssistant submissionId={submission.id} messages={chatMessages} report={report} sendQuestion={sendQuestion} go={go} /> : <KnowledgeAssistant view={view} tab={tab} category={displayedCategory} currentItem={view === "detail" ? itemById.get(selectedId) ?? null : null} resultSetId={assistantResult?.result_set_id ?? null} onResult={applyAssistantResult} onOpenItem={(itemId) => { if (itemById.has(itemId)) openItem(itemId, activeOverviewQuery); }} />}
+      {quizConfirmOpen && <QuizConfirmOverlay onCancel={() => setQuizConfirmOpen(false)} onConfirm={() => { setQuizConfirmOpen(false); setQuizOpen(true); }} />}
       {preview && <ZoomableImageStage className="z-[100] bg-[#171719]/75" src={apiUrl(preview.url)} alt={preview.name} onClose={() => setPreview(null)} />}
     </div>
   );
 }
 
 // 渲染成员原型中的案例瀑布流总览。
-function OverviewView({ library, searchItems, counts, items, loading, error, tab, category, categories, query, assistantResult, restorePosition, onPositionChange, onQuery, onExitAssistant, onAdjustAssistant, onTab, onCategory, onOpen }: {
+function OverviewView({ library, searchItems, counts, items, loading, error, tab, category, categories, query, assistantResult, assistantReturnLabel, restorePosition, onPositionChange, onQuery, onExitAssistant, onAdjustAssistant, onQuiz, onTab, onCategory, onOpen }: {
   library: KnowledgeLibraryPayload;
   searchItems: KnowledgeLibraryItem[];
   counts: LibraryCounts;
@@ -174,11 +226,13 @@ function OverviewView({ library, searchItems, counts, items, loading, error, tab
   categories: string[];
   query: string;
   assistantResult: KnowledgeAssistantResult | null;
+  assistantReturnLabel: string;
   restorePosition: OverviewPosition;
   onPositionChange: (position: OverviewPosition) => void;
   onQuery: (value: string) => void;
   onExitAssistant: () => void;
   onAdjustAssistant: () => void;
+  onQuiz: () => void;
   onTab: (tab: LibraryTab) => void;
   onCategory: (category: string) => void;
   onOpen: (id: string, position: OverviewPosition) => void;
@@ -202,9 +256,9 @@ function OverviewView({ library, searchItems, counts, items, loading, error, tab
   return (
     <section className="knowledge-view knowledge-view-overview knowledge-view-active">
       <KnowledgeHeader eyebrow={assistantResult ? "根据你的设计条件整理" : "知识与案例学习"} />
-      {assistantResult && <AssistantResultBanner result={assistantResult} onAdjust={onAdjustAssistant} onExit={onExitAssistant} />}
+      {assistantResult && <AssistantResultBanner result={assistantResult} returnLabel={assistantReturnLabel} onAdjust={onAdjustAssistant} onExit={onExitAssistant} />}
       <div className="knowledge-overview-tools">
-        <KnowledgeFilters counts={counts} items={searchItems} tab={tab} category={category} categories={categories} withCount onTab={onTab} onCategory={onCategory} />
+        <KnowledgeFilters counts={counts} items={searchItems} tab={tab} category={category} categories={categories} withCount hideEmpty={Boolean(assistantResult)} onQuiz={assistantResult ? undefined : onQuiz} onTab={onTab} onCategory={onCategory} />
         <SearchInput value={query} placeholder="搜索标题、编号或关键词" onChange={onQuery} onClear={() => onQuery("")} />
       </div>
       <div className="knowledge-masonry-wrap knowledge-scroll" ref={overviewScrollRef} onScroll={(event) => onPositionChange({ scrollTop: event.currentTarget.scrollTop, itemId: "", itemOffset: 0 })}>
@@ -218,7 +272,7 @@ function OverviewView({ library, searchItems, counts, items, loading, error, tab
 }
 
 // 显示本轮 AI 提取条件，并提供调整和恢复原总览入口。
-function AssistantResultBanner({ result, onAdjust, onExit }: { result: KnowledgeAssistantResult; onAdjust: () => void; onExit: () => void }) {
+function AssistantResultBanner({ result, returnLabel, onAdjust, onExit }: { result: KnowledgeAssistantResult; returnLabel: string; onAdjust: () => void; onExit: () => void }) {
   const conditions = result.extracted_conditions;
   const caseCount = result.recommendations.filter((item) => item.kind === "case").length;
   const knowledgeCount = result.recommendations.length - caseCount;
@@ -228,7 +282,31 @@ function AssistantResultBanner({ result, onAdjust, onExit }: { result: Knowledge
     ...((conditions.site_contexts as string[] | undefined) ?? []),
     ...((conditions.dimensions as string[] | undefined) ?? []),
   ].filter(Boolean);
-  return <div className="knowledge-assistant-result-banner"><div><span>AI 为你推荐</span><strong>{labels.join(" · ") || "根据本轮对话整理的学习内容"}</strong><small>共 {result.recommendations.length} 张卡片 · 案例 {caseCount} · 知识卡 {knowledgeCount}，推荐理由仅基于当前知识库。</small></div><div><button type="button" onClick={onAdjust}>调整条件</button><button type="button" className="primary" onClick={onExit}>返回原总览</button></div></div>;
+  return <div className="knowledge-assistant-result-banner"><div><span>AI 为你推荐</span><strong>{labels.join(" · ") || "根据本轮对话整理的学习内容"}</strong><small>共 {result.recommendations.length} 张卡片 · 案例 {caseCount} · 知识卡 {knowledgeCount}，推荐理由仅基于当前知识库。</small></div><div><button type="button" onClick={onAdjust}>调整条件</button><button type="button" className="primary" onClick={onExit}>{returnLabel}</button></div></div>;
+}
+
+// 把报告助手的真实引用转换为知识库现有的推荐结果总览结构。
+function buildReportRecommendationResult(context: ReportKnowledgeContext): KnowledgeAssistantResult {
+  const recommendations = context.citations.map((item) => ({
+    id: item.id,
+    kind: item.id.startsWith("PBC-") ? "case" as const : "knowledge" as const,
+    reason: "结合当前报告问题推荐",
+    matched_fields: ["当前报告"],
+    limitations: [],
+    score: 0,
+    review_status: "",
+    human_review_confirmed: false,
+  }));
+  return {
+    answer: "根据当前报告整理相关案例与知识卡。",
+    intent: "knowledge_query",
+    clarification_required: false,
+    extracted_conditions: {},
+    recommendations,
+    citations: context.citations,
+    result_set_id: null,
+    ui_action: "show_assistant_results",
+  };
 }
 
 // “全部”严格先展示完案例，再在下方展示知识卡。
@@ -254,7 +332,7 @@ function OverviewGrid({ items, className, recommendationById, onOpen }: { items:
 }
 
 // 渲染成员原型中的左侧目录和右侧深度阅读。
-function DetailView({ counts, searchItems, items, detail, selectedId, loading, tab, query, itemById, onQuery, onClearQuery, onTab, onOpen, onRelated, onPreview, onBack }: {
+function DetailView({ counts, searchItems, items, detail, selectedId, loading, tab, query, itemById, hideEmptyTypes, backLabel, onQuery, onClearQuery, onTab, onOpen, onRelated, onPreview, onBack }: {
   counts: LibraryCounts;
   searchItems: KnowledgeLibraryItem[];
   items: KnowledgeLibraryItem[];
@@ -264,6 +342,8 @@ function DetailView({ counts, searchItems, items, detail, selectedId, loading, t
   tab: LibraryTab;
   query: string;
   itemById: Map<string, KnowledgeLibraryItem>;
+  hideEmptyTypes: boolean;
+  backLabel: string;
   onQuery: (value: string) => void;
   onClearQuery: () => void;
   onTab: (tab: LibraryTab) => void;
@@ -288,11 +368,11 @@ function DetailView({ counts, searchItems, items, detail, selectedId, loading, t
 
   return (
     <section className="knowledge-view knowledge-view-detail knowledge-view-active">
-      <KnowledgeHeader eyebrow="知识与案例学习 / 深度阅读" action={<Button kind="white" className="knowledge-back report-top-action-button" onClick={onBack}>返回知识库总览</Button>} />
+      <KnowledgeHeader eyebrow="知识与案例学习 / 深度阅读" action={<Button kind="white" className="knowledge-back report-top-action-button" onClick={onBack}>{backLabel}</Button>} />
       <div className="knowledge-detail-layout">
         <aside className="knowledge-catalog">
           <SearchInput value={query} placeholder="搜索标题、编号或关键词" onChange={onQuery} onClear={onClearQuery} />
-          <KnowledgeFilters counts={counts} items={searchItems} tab={tab} category="全部" categories={[]} compact withCount showCategories={false} onTab={onTab} onCategory={() => undefined} />
+          <KnowledgeFilters counts={counts} items={searchItems} tab={tab} category="全部" categories={[]} compact withCount hideEmpty={hideEmptyTypes} showCategories={false} onTab={onTab} onCategory={() => undefined} />
           <div className="knowledge-catalog-list knowledge-scroll" ref={catalogListRef}>
             {!items.length && <EmptyState text="没有找到相关卡片。" />}
             {items.map((item, index) => <CatalogCard item={item} index={index} active={selectedId === item.id} onClick={() => onOpen(item.id)} key={item.id} />)}
@@ -312,7 +392,7 @@ function KnowledgeHeader({ eyebrow, action }: { eyebrow: string; action?: ReactN
 }
 
 // 渲染类型和分类筛选，保留当前系统两级筛选能力。
-function KnowledgeFilters({ counts, items, tab, category, categories, withCount = false, compact = false, showCategories = true, onTab, onCategory }: {
+function KnowledgeFilters({ counts, items, tab, category, categories, withCount = false, compact = false, hideEmpty = false, showCategories = true, onQuiz, onTab, onCategory }: {
   counts: LibraryCounts;
   items: KnowledgeLibraryItem[];
   tab: LibraryTab;
@@ -320,7 +400,9 @@ function KnowledgeFilters({ counts, items, tab, category, categories, withCount 
   categories: string[];
   withCount?: boolean;
   compact?: boolean;
+  hideEmpty?: boolean;
   showCategories?: boolean;
+  onQuiz?: () => void;
   onTab: (tab: LibraryTab) => void;
   onCategory: (category: string) => void;
 }) {
@@ -334,12 +416,18 @@ function KnowledgeFilters({ counts, items, tab, category, categories, withCount 
     <div className={`knowledge-filter-bar ${compact ? "knowledge-filter-compact" : ""}`}>
       <div className="knowledge-primary-filters">
         <FilterButton active={tab === "all"} label="全部" count={withCount ? counts.all : undefined} onClick={() => onTab("all")} />
-        <FilterButton active={tab === "case"} label="建筑案例" count={withCount ? counts.case : undefined} onClick={() => onTab("case")} />
-        <FilterButton active={tab === "knowledge"} label="知识卡" count={withCount ? counts.knowledge : undefined} onClick={() => onTab("knowledge")} />
+        {(!hideEmpty || counts.case > 0) && <FilterButton active={tab === "case"} label="建筑案例" count={withCount ? counts.case : undefined} onClick={() => onTab("case")} />}
+        {(!hideEmpty || counts.knowledge > 0) && <FilterButton active={tab === "knowledge"} label="知识卡" count={withCount ? counts.knowledge : undefined} onClick={() => onTab("knowledge")} />}
+        {onQuiz && <FilterButton active={false} label="知识测试" onClick={onQuiz} />}
       </div>
       {showCategories && tab !== "all" && categories.length > 0 && <><span className="knowledge-filter-divider" /><div className="knowledge-category-scroll" ref={categoryScrollRef}><div className="knowledge-category-filters"><FilterButton active={category === "全部"} label="全部分类" onClick={() => onCategory("全部")} />{categories.map((item) => <FilterButton active={category === item} label={item} count={withCount ? filteredCount(items, tab, item) : undefined} onClick={() => onCategory(item)} key={item} />)}</div></div></>}
     </div>
   );
+}
+
+// 进入知识测试前先说明测试方式，避免误触后直接切换页面。
+function QuizConfirmOverlay({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => void }) {
+  return <div className="knowledge-quiz-confirm-overlay" onClick={onCancel}><section role="dialog" aria-modal="true" aria-labelledby="knowledge-quiz-confirm-title" onClick={(event) => event.stopPropagation()}><span>知识测试</span><h2 id="knowledge-quiz-confirm-title">确定进入知识测试吗？</h2><p>你可以选择知识分类和难度，通过知识卡中的自测题检验学习情况。测试过程中可以随时返回知识库。</p><div><button type="button" onClick={onCancel}>暂不进入</button><button type="button" className="primary" onClick={onConfirm}>开始测试</button></div></section></div>;
 }
 
 // 渲染单个横向筛选按钮。
@@ -423,7 +511,7 @@ function OverviewCard({ item, index, recommendation, onClick }: { item: Knowledg
       onClick({ scrollTop: scrollArea?.scrollTop ?? 0, itemId: item.id, itemOffset });
     }}>
       <KnowledgeVisual item={item} index={index} mode="overview" />
-      <span className="knowledge-card-content"><span className="knowledge-card-meta">{item.kind_label} / {item.level_label || item.category}</span><strong>{item.title}</strong><span className="knowledge-card-id">{item.id}</span><span className="knowledge-card-excerpt">{item.excerpt}</span>{recommendation && <span className="knowledge-ai-reason"><b>推荐理由{!recommendation.human_review_confirmed && <span className="knowledge-review-pending">待专业复核</span>}</b>{recommendation.reason}{recommendation.matched_fields.length > 0 && <i>{recommendation.matched_fields.map((field) => <em key={field}>{field}</em>)}</i>}{recommendation.limitations.length > 0 && <small>注意：{recommendation.limitations.join("；")}</small>}</span>}</span>
+      <span className="knowledge-card-content"><span className="knowledge-card-meta">{item.kind_label} / {item.level_label || item.category}</span><strong>{item.title}</strong><span className="knowledge-card-id">{item.id}</span><span className="knowledge-card-excerpt">{item.excerpt}</span>{recommendation && <span className="knowledge-ai-reason"><b>推荐理由</b>{recommendation.reason}<small>部分内容可能存在遗漏或偏差，请留意核对</small></span>}</span>
     </button>
   );
 }
@@ -494,6 +582,8 @@ function MarkdownBody({ content, images, itemById, onRelated, onPreview }: { con
       return <div className="knowledge-relation-row" key={index}><span>•</span><button type="button" disabled={!targetItem} onClick={() => targetItem && onRelated(itemId)}>{itemId}{title ? ` · ${title}` : ""}</button></div>;
     }
     if (/^[-*]\s+/.test(line)) return <div className="knowledge-list-row" key={index}><span>•</span><p>{plainInline(line.replace(/^[-*]\s+/, ""))}</p></div>;
+    if (/^（.+）$/.test(line)) return <p className="knowledge-image-caption" key={index}>{plainInline(line)}</p>;
+    if ((line.match(/→/g) ?? []).length >= 2) return <p className="knowledge-flow-line" key={index}>{plainInline(line)}</p>;
     if (/^\d+[.、]\s*/.test(line)) return <p key={index}>{plainInline(line)}</p>;
     if (line.startsWith("|")) return <p className="knowledge-table-line" key={index}>{line}</p>;
     return <p key={index}>{plainInline(line)}</p>;

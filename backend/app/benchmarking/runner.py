@@ -10,7 +10,6 @@ from pathlib import Path
 import traceback
 from typing import Any
 
-from app.agents.image_payload import build_model_image_data_url
 from app.config import get_settings
 from app.llm.client import get_llm_client
 from app.llm.dashscope_files import DashScopeFileClient
@@ -239,12 +238,6 @@ def build_context(
     for item in case_input["drawings"]:
         path = (case_root / item["relative_path"]).resolve()
         model_file_url = upload_cache.get(str(path), "")
-        if not model_file_url and provider in {"openai", "gemini"}:
-            model_file_url = build_model_image_data_url(
-                path,
-                item["mime_type"],
-                get_settings().llm_image_max_side,
-            )
         drawings.append(
             {
                 **item,

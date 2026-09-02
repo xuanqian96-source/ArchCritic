@@ -2,6 +2,7 @@
 import { useState } from "react";
 import type { PageProps, Route } from "../App";
 import { getProjectVersionLabel, type ProjectVersion } from "../state/projectGroups";
+import { AppPromptOverlay } from "./baseComponents";
 import { ChevronIcon, HomeIcon, LibraryIcon } from "./accountComponents";
 
 export interface ConfirmAction {
@@ -219,18 +220,17 @@ export function ConfirmCard({ action, onClose }: { action: ConfirmAction; onClos
   };
 
   return (
-    <>
-      <div className="absolute inset-0 z-[70] bg-white/70 backdrop-blur-[2px]" onClick={onClose} />
-      <section className="figma-shadow font-chat absolute left-[472px] top-[270px] z-[80] h-[226px] w-[592px] rounded-[20px] border border-[#d9dde3] bg-white p-7">
-        <h2 className="text-[24px] font-medium leading-8">{action.title}</h2>
-        <p className="mt-6 text-[16px] leading-6 text-[#171719]">{action.message}</p>
-        <p className="mt-4 text-[14px] leading-5 text-[#9a9ea7]">删除后，该项目或版本的历史记录将无法恢复。</p>
-        <div className="absolute bottom-6 right-7 flex gap-4">
-          <button type="button" className="h-11 w-[92px] rounded-[22px] border border-[#d9dde3] bg-white text-[15px] font-medium text-[#171719]" onClick={onClose}>取消</button>
-          <button type="button" disabled={submitting} className="h-11 w-[126px] rounded-[22px] bg-[#171719] text-[15px] font-medium text-white disabled:opacity-60" onClick={() => void confirm()}>{submitting ? "删除中" : action.confirmText}</button>
+    <AppPromptOverlay onClose={onClose}>
+      <section className="app-prompt-card figma-shadow" onClick={(event) => event.stopPropagation()}>
+        <h2 className="app-prompt-title">{action.title}</h2>
+        <p className="app-prompt-copy">{action.message}</p>
+        <p className="app-prompt-copy text-[#9a9ea7]">删除后，该项目或版本的历史记录将无法恢复。</p>
+        <div className="app-prompt-actions">
+          <button type="button" className="app-action-button h-9 rounded-[10px] border border-[#d9dde3] bg-white px-5 text-[#171719]" onClick={onClose}>取消</button>
+          <button type="button" disabled={submitting} className="app-action-button h-9 rounded-[10px] bg-[#171719] px-5 text-white disabled:opacity-60" onClick={() => void confirm()}>{submitting ? "删除中" : action.confirmText}</button>
         </div>
       </section>
-    </>
+    </AppPromptOverlay>
   );
 }
 
@@ -253,19 +253,18 @@ export function DraftExitCard({ onClose, onSave, onDiscard }: { onClose: () => v
   };
 
   return (
-    <>
-      <div className="absolute inset-0 z-[70] bg-[#171719]/30" onClick={onClose} />
-      <section className="figma-shadow font-chat absolute left-[472px] top-[270px] z-[80] h-[238px] w-[592px] rounded-[20px] border border-[#d9dde3] bg-white p-7">
-        <h2 className="text-[24px] font-bold leading-8">草稿尚未保存</h2>
-        <p className="mt-6 text-[16px] leading-6 text-[#171719]">当前新建评图还没有保存草稿。返回首页前，可以先保存当前填写内容。</p>
-        {error && <p className="mt-4 text-[13px] font-bold leading-5 text-[#ef4444]">{error}</p>}
-        <div className="absolute bottom-6 right-7 flex gap-4">
-          <button type="button" disabled={submitting} className="app-action-button h-10 w-[82px] rounded-[12px] border border-[#d9dde3] bg-white text-[#171719] disabled:opacity-60" onClick={onClose}>取消</button>
-          <button type="button" disabled={submitting} className="app-action-button h-10 w-[112px] rounded-[12px] border border-[#d9dde3] bg-white text-[#171719] disabled:opacity-60" onClick={onDiscard}>不保存</button>
-          <button type="button" disabled={submitting} className="app-action-button h-10 w-[124px] rounded-[12px] bg-[#6c4dff] text-white disabled:opacity-60" onClick={() => void save()}>{submitting ? "保存中" : "保存并退出"}</button>
+    <AppPromptOverlay onClose={onClose}>
+      <section className="app-prompt-card figma-shadow" onClick={(event) => event.stopPropagation()}>
+        <h2 className="app-prompt-title">草稿尚未保存</h2>
+        <p className="app-prompt-copy">当前新建评图还没有保存草稿。返回首页前，可以先保存当前填写内容。</p>
+        {error && <p className="mt-3 text-[12px] font-bold leading-5 text-[#ef4444]">{error}</p>}
+        <div className="app-prompt-actions">
+          <button type="button" disabled={submitting} className="app-action-button h-9 rounded-[10px] border border-[#d9dde3] bg-white px-4 text-[#171719] disabled:opacity-60" onClick={onClose}>取消</button>
+          <button type="button" disabled={submitting} className="app-action-button h-9 rounded-[10px] border border-[#d9dde3] bg-white px-4 text-[#171719] disabled:opacity-60" onClick={onDiscard}>不保存</button>
+          <button type="button" disabled={submitting} className="app-action-button h-9 rounded-[10px] bg-[#6c4dff] px-4 text-white disabled:opacity-60" onClick={() => void save()}>{submitting ? "保存中" : "保存并退出"}</button>
         </div>
       </section>
-    </>
+    </AppPromptOverlay>
   );
 }
 

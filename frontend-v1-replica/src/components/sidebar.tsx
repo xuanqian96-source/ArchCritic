@@ -6,19 +6,30 @@ import { deleteSubmission, updateSubmission } from "../api/submissions";
 import { readSubmissionRoute, rememberSubmissionRoute } from "../state/flowRoutes";
 import { useProfile } from "../state/profile";
 import { useAuth } from "../state/auth";
+import { consumeOnboardingTour, queueOnboardingTour } from "../state/onboarding";
 import { getCachedProjectGroups, getLatestVersion, getProjectVersionLabel, isProjectGroupPinned, loadProjectGroups, readPinnedProjectIds, sortPinnedProjectGroups, type ProjectGroup, type ProjectVersion, writePinnedProjectIds } from "../state/projectGroups";
 import { useWorkspace } from "../state/workspace";
 import { AccountMenu, ChevronIcon, ProfileAvatar, ProfileModal } from "./accountComponents";
+import { FeedbackModal, HelpMenu, InformationListModal, LogoutConfirmModal, OnboardingTour } from "./helpComponents";
 import { ArchCriticLogo, ConfirmCard, DotsIcon, DraftExitCard, formatSidebarDate, NavItem, PinMarkIcon, ProjectManageMenu, ProjectVersionMenu, revealSidebarPopup, SidebarMenuIconView, type ConfirmAction } from "./sidebarParts";
+import { guideItems } from "../data/helpContent";
 
 export function Sidebar({ go, creating = false }: Pick<PageProps, "go"> & { creating?: boolean; projectName?: string }) {
   const { draftDirty, projects: savedProjects, project: activeProject, submission: activeSubmission, openProject, openSubmission, prefetchSubmission, refreshProjects, resetDraft, saveDraft, setNotice, syncProjectName, syncSubmissionTitle } = useWorkspace();
   const { profile } = useProfile();
   const { logout } = useAuth();
   const sidebarRef = useRef<HTMLElement>(null);
+  const helpCloseTimer = useRef<number | null>(null);
   const [projectsExpanded, setProjectsExpanded] = useState(true);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [profileEditing, setProfileEditing] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
+  const [faqOpen, setFaqOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
+  const [logoutBusy, setLogoutBusy] = useState(false);
+  const [logoutMessage, setLogoutMessage] = useState("");
   const [projectGroups, setProjectGroups] = useState<ProjectGroup[]>(() => getCachedProjectGroups(savedProjects));
   const [versionProjectKey, setVersionProjectKey] = useState<string | null>(null);
   const [manageProjectKey, setManageProjectKey] = useState<string | null>(null);
@@ -85,15 +96,67 @@ export function Sidebar({ go, creating = false }: Pick<PageProps, "go"> & { crea
   }, [batchEditProjectKey]);
 
   useEffect(() => {
+    if (!consumeOnboardingTour()) return;
+    setTourOpen(true);
+  }, []);
+
+  useEffect(() => () => {
+    if (helpCloseTimer.current != null) window.clearTimeout(helpCloseTimer.current);
+  }, []);
+
+  useEffect(() => {
     if (!accountOpen) return;
     const closeOutside = (event: PointerEvent) => {
       const target = event.target as HTMLElement;
       if (target.closest("[data-account-menu]") || target.closest("[data-account-trigger]")) return;
       setAccountOpen(false);
+      setHelpOpen(false);
     };
     document.addEventListener("pointerdown", closeOutside);
     return () => document.removeEventListener("pointerdown", closeOutside);
   }, [accountOpen]);
+
+  // 悬停帮助区域时展开二级菜单，短延迟让鼠标能平稳移入右侧卡片。
+  const keepHelpOpen = () => {
+    if (helpCloseTimer.current != null) window.clearTimeout(helpCloseTimer.current);
+    helpCloseTimer.current = null;
+    setHelpOpen(true);
+  };
+
+  // 鼠标离开帮助入口和二级菜单后自动收起。
+  const scheduleHelpClose = () => {
+    if (helpCloseTimer.current != null) window.clearTimeout(helpCloseTimer.current);
+    helpCloseTimer.current = window.setTimeout(() => {
+      setHelpOpen(false);
+      helpCloseTimer.current = null;
+    }, 90);
+  };
+
+  // 新手指引统一从首页开始，确保所有高亮区域可见。
+  const startTour = () => {
+    setAccountOpen(false);
+    setHelpOpen(false);
+    if (currentRoute === "dashboard") {
+      setTourOpen(true);
+      return;
+    }
+    queueOnboardingTour();
+    go("dashboard");
+  };
+
+  // 完成后端退出并清理当前工作区。
+  const confirmLogout = async () => {
+    setLogoutBusy(true);
+    setLogoutMessage("");
+    try {
+      await logout();
+      resetDraft();
+      go("auth");
+    } catch (error) {
+      setLogoutMessage(error instanceof Error ? error.message : "退出失败，请稍后重试。");
+      setLogoutBusy(false);
+    }
+  };
 
   // 打开项目的最近版本，并进入对应页面。
   const openLatestProject = async (group: ProjectGroup) => {
@@ -438,14 +501,31 @@ export function Sidebar({ go, creating = false }: Pick<PageProps, "go"> & { crea
           );
         })}
       </div>
-      {accountOpen && <AccountMenu onEditProfile={() => { setAccountOpen(false); setProfileEditing(true); }} onLogout={() => void logout().then(() => { resetDraft(); go("auth"); })} />}
-      <button type="button" data-account-trigger className="absolute bottom-[12px] left-[21px] h-[52px] w-[204px] rounded-[16px] border border-[#e8ebef] bg-white/75 text-left" onClick={() => setAccountOpen((current) => !current)}>
+      {accountOpen && <AccountMenu
+        helpActive={helpOpen}
+        onEditProfile={() => { setAccountOpen(false); setHelpOpen(false); setProfileEditing(true); }}
+        onHelpEnter={keepHelpOpen}
+        onHelpLeave={scheduleHelpClose}
+        onLogout={() => { setAccountOpen(false); setHelpOpen(false); setLogoutMessage(""); setLogoutConfirmOpen(true); }}
+      />}
+      {accountOpen && helpOpen && <HelpMenu
+        onMouseEnter={keepHelpOpen}
+        onMouseLeave={scheduleHelpClose}
+        onTour={startTour}
+        onFaq={() => { setAccountOpen(false); setHelpOpen(false); setFaqOpen(true); }}
+        onFeedback={() => { setAccountOpen(false); setHelpOpen(false); setFeedbackOpen(true); }}
+      />}
+      <button type="button" data-account-trigger className="absolute bottom-[12px] left-[21px] h-[52px] w-[204px] rounded-[16px] border border-[#e8ebef] bg-white/75 text-left" onClick={() => { setAccountOpen((current) => !current); setHelpOpen(false); }}>
         <ProfileAvatar profile={profile} className="absolute left-[11px] top-[11px] h-7 w-7 text-[13px]" />
         <b className="sidebar-primary-text absolute left-[51px] top-[7px] font-bold">{profile.displayName}</b>
-        <span className="absolute left-[51px] top-[27px] text-[10px] leading-[13px] text-[#9a9ea7]">Plus</span>
+        <span className="absolute left-[51px] top-[27px] text-[10px] leading-[13px] text-[#9a9ea7]">内测用户</span>
       </button>
     </aside>
     {profileEditing && <ProfileModal profile={profile} onClose={() => setProfileEditing(false)} />}
+    {faqOpen && <InformationListModal title="操作指引与常见问题" items={guideItems} onClose={() => setFaqOpen(false)} />}
+    {feedbackOpen && <FeedbackModal onClose={() => setFeedbackOpen(false)} onDone={() => { setFeedbackOpen(false); go("dashboard"); }} />}
+    {logoutConfirmOpen && <LogoutConfirmModal busy={logoutBusy} message={logoutMessage} onCancel={() => !logoutBusy && setLogoutConfirmOpen(false)} onConfirm={() => void confirmLogout()} />}
+    {tourOpen && <OnboardingTour onClose={() => setTourOpen(false)} />}
     {confirmAction && <ConfirmCard action={confirmAction} onClose={() => setConfirmAction(null)} />}
     {exitPromptOpen && <DraftExitCard onClose={() => setExitPromptOpen(false)} onSave={saveAndExit} onDiscard={discardAndExit} />}
     </>

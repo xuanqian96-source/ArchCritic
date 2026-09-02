@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import re
 import subprocess
-import tempfile
 import zipfile
+from io import BytesIO
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -117,14 +117,11 @@ def decode_text(content: bytes) -> str:
 def extract_docx_text(content: bytes) -> str:
     """从 DOCX 的 XML 正文中读取段落文本。"""
     try:
-        with tempfile.SpooledTemporaryFile() as handle:
-            handle.write(content)
-            handle.seek(0)
-            with zipfile.ZipFile(handle) as archive:
-                document = archive.read("word/document.xml")
-    except (KeyError, zipfile.BadZipFile) as exc:
+        with zipfile.ZipFile(BytesIO(content)) as archive:
+            document = archive.read("word/document.xml")
+        root = ElementTree.fromstring(document)
+    except (KeyError, zipfile.BadZipFile, ElementTree.ParseError) as exc:
         raise TaskBookExtractionError("DOCX 文件结构损坏，无法读取正文。") from exc
-    root = ElementTree.fromstring(document)
     namespace = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
     paragraphs = []
     for paragraph in root.iter(f"{namespace}p"):

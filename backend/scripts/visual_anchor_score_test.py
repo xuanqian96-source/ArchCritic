@@ -43,7 +43,7 @@ def main() -> None:
 
     run_parser = subparsers.add_parser("run", help="只运行最终 Agent，不读取测试教师分")
     run_parser.add_argument("--provider", default="dashscope")
-    run_parser.add_argument("--model", default="qwen3.6-plus")
+    run_parser.add_argument("--model", default="qwen3.8-max")
 
     subparsers.add_parser("analyze", help="结果完成后解封三份教师分并比较")
     subparsers.add_parser("status", help="查看锚点和三份结果状态")

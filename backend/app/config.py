@@ -9,13 +9,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """定义系统运行时会用到的配置项。"""
 
-    openai_api_key: str = ""
     dashscope_api_key: str = ""
     dashscope_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    gemini_api_key: str = ""
-    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
-    llm_provider: str = "mock"
-    llm_model: str = "gpt-4o-mini"
+    llm_provider: str = "dashscope"
+    llm_model: str = "qwen3.8-max"
+    llm_assistant_model: str = "qwen3.7-plus"
     llm_timeout_seconds: int = 150
     llm_max_tokens: int = 2200
     llm_agent_timeout_seconds: int = 50

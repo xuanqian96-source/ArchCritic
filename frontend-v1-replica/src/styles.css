@@ -47,6 +47,16 @@ button {
   cursor: pointer;
 }
 
+.onboarding-skip-button {
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.profile-password-action {
+  font-size: 14px;
+  line-height: 20px;
+}
+
 .font-inter {
   font-family: "Inter", "Noto Sans SC", "Microsoft YaHei", sans-serif;
 }
@@ -148,6 +158,38 @@ button {
 
 .app-action-button:not(:disabled):active {
   transform: translateY(0);
+}
+
+.app-prompt-card {
+  width: min(440px, calc(100vw - 40px));
+  padding: 28px;
+  border: 1px solid #e8ebef;
+  border-radius: 22px;
+  color: #171719;
+  background: #fff;
+  font-family: "Inter", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+}
+
+.app-prompt-title {
+  margin: 0;
+  font-size: 20px !important;
+  font-weight: 700 !important;
+  line-height: 28px !important;
+}
+
+.app-prompt-copy {
+  margin: 12px 0 0;
+  color: #53565e;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  line-height: 24px !important;
+}
+
+.app-prompt-actions {
+  margin-top: 24px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
 }
 
 .flow-page-motion {

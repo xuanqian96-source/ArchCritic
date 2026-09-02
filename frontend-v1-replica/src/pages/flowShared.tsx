@@ -55,10 +55,6 @@ export function getAgentSpecs(types: string[]) {
 }
 export const buildingTypeOptions = ["博物馆建筑", "学校建筑", "酒店建筑", "社区活动中心", "办公建筑", "居住建筑", "商业建筑"];
 export const gradeOptions = ["大一", "大二", "大三", "大四", "大五"];
-export const modelOptions = [
-  { value: "dashscope|qwen3.6-plus", label: "qwen3.6-plus" },
-  { value: "gemini|gemini-2.5-flash", label: "gemini-2.5-flash" },
-];
 export const drawingTypeOptions = [
   { value: "site", label: "总平面图" },
   { value: "plan", label: "首层平面图" },
@@ -179,15 +175,7 @@ export const announcements = [
   { title: "任务书会参与评分", detail: "系统会读取任务书正文，根据课程要求和年级调整各专项评分占比，并随报告保存本次评分依据。" },
 ];
 
-export const guideItems = [
-  { title: "操作指引：完成第一次 AI 评图", detail: "点击“+ 新建评图”，填写项目信息，选择项目阶段与 Agent，上传图纸并确认提交。报告生成后，可继续查看问题详情和知识库依据。" },
-  { title: "常见问题：为什么报告仍在生成？", detail: "真实模型需要依次读取图纸并完成专项分析。请在等待页查看进度；如果暂时不需要继续，可点击“暂停评图”。" },
-  { title: "常见问题：如何继续下一轮修改？", detail: "可以从已有项目继承资料，复用项目信息、最近一次图纸和 Agent 设置，再上传调整后的图纸继续评图。" },
-  { title: "操作指引：查看历史版本", detail: "在报告页点击历史版本对比，可以查看同一项目的多次提交，比较总分和各维度变化。" },
-  { title: "常见问题：知识库依据从哪里来？", detail: "系统会根据项目类型、阶段、图纸内容和设计说明，从本地知识库中筛选最相关的规范、案例和常见问题。" },
-  { title: "操作指引：从旧项目继续评图", detail: "新建评图时可以选择继承已有项目，复用基础资料和最近一次图纸，再上传修改后的版本。" },
-  { title: "常见问题：草稿项目如何处理？", detail: "未提交评图的项目会显示为草稿，点击项目后可继续补充信息、上传图纸并确认提交。" },
-];
+export { guideItems } from "../data/helpContent";
 
 export interface InformationItem {
   title: string;

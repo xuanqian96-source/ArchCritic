@@ -8,7 +8,7 @@ import logging
 import math
 from pathlib import Path
 import re
-from typing import Any
+from typing import Any, Callable
 from uuid import uuid4
 
 from app.config import get_settings
@@ -20,10 +20,9 @@ from app.wiki import resolve_wiki_root
 RESULT_TOOLS = {
     "case_recommendation",
     "knowledge_query",
-    "similar_cases",
-    "case_compare",
     "learning_path",
 }
+PUBLIC_CARD_ID_PATTERN = re.compile(r"\b(?:KC-[A-Z]+-\d+|PBC-\d+)\b", flags=re.I)
 SITE_CONTEXTS = ("城市", "校园", "滨水", "历史街区", "社区", "乡村", "郊野", "公园", "山地", "海边")
 DIMENSIONS = ("场地", "功能", "流线", "形式", "结构", "材料", "环境", "采光", "入口", "展陈", "运营", "改造")
 BUILDING_TYPE_ALIASES = {
@@ -128,7 +127,7 @@ def retrieve_knowledge_candidates(
     current = next((item for item in documents if item["id"] == current_card_id), None)
     ranked: list[tuple[float, dict[str, Any], list[str], list[str]]] = []
     for document in documents:
-        if tool in {"similar_cases", "case_compare"} and document["kind"] != "case":
+        if tool == "case_recommendation" and document["kind"] != "case":
             continue
         if tool == "knowledge_query" and document["kind"] != "knowledge":
             continue
@@ -165,6 +164,7 @@ def generate_knowledge_answer(
     context: dict[str, Any],
     history: list[dict[str, str]],
     wiki_dir: str,
+    on_answer_delta: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     """调用后端默认真实模型，并校验回答中的全部卡片编号。"""
     settings = get_settings()
@@ -178,9 +178,10 @@ def generate_knowledge_answer(
         current_detail = get_library_item(wiki_dir, str(context["current_card_id"]))
     candidate_by_id = {candidate["id"]: candidate for candidate in candidates}
     model_payload = _call_model(
-        tool, message, conditions, candidates, current_detail, history
+        tool, message, conditions, candidates, current_detail, history, on_answer_delta
     )
     clarification_required = bool(model_payload.get("clarification_required", False))
+    raw_answer = str(model_payload.get("answer", "")).strip()
     recommendations = []
     if not clarification_required:
         for raw in model_payload.get("recommendations", []):
@@ -191,14 +192,30 @@ def generate_knowledge_answer(
             recommendations.append({
                 "id": item_id,
                 "kind": candidate["kind"],
-                "reason": str(raw.get("reason", "")).strip() or _default_reason(candidate),
+                "reason": _clean_public_answer(str(raw.get("reason", "")).strip()) or _default_reason(candidate),
                 "matched_fields": candidate["matched_fields"],
                 "limitations": _clean_list(raw.get("limitations")) or candidate["limitations"],
                 "score": candidate["retrieval_score"],
                 "review_status": candidate["review_status"],
                 "human_review_confirmed": candidate["human_review_confirmed"],
             })
-    answer = str(model_payload.get("answer", "")).strip()
+        # 模型在正文中提到的真实候选必须全部成为可点击链接，不能被固定数量截断。
+        for mentioned_id in PUBLIC_CARD_ID_PATTERN.findall(raw_answer):
+            item_id = mentioned_id.upper()
+            candidate = candidate_by_id.get(item_id)
+            if not candidate or any(item["id"] == item_id for item in recommendations):
+                continue
+            recommendations.append({
+                "id": item_id,
+                "kind": candidate["kind"],
+                "reason": _default_reason(candidate),
+                "matched_fields": candidate["matched_fields"],
+                "limitations": candidate["limitations"],
+                "score": candidate["retrieval_score"],
+                "review_status": candidate["review_status"],
+                "human_review_confirmed": candidate["human_review_confirmed"],
+            })
+    answer = _clean_public_answer(raw_answer)
     if not answer:
         raise KnowledgeAssistantModelError("AI 返回内容不完整，请重试。")
     should_show_results = tool in RESULT_TOOLS and bool(recommendations)
@@ -207,6 +224,13 @@ def generate_knowledge_answer(
         {"id": item["id"], "title": candidate_by_id[item["id"]]["title"]}
         for item in recommendations
     ]
+    if tool == "current_card_qa":
+        citations = []
+    action = "none"
+    if should_show_results:
+        action = "update_assistant_results" if context.get("previous_result_set_id") else "show_assistant_results"
+    elif tool == "current_card_qa" and current_detail:
+        action = "focus_current_card"
     return {
         "answer": answer,
         "intent": tool,
@@ -215,7 +239,7 @@ def generate_knowledge_answer(
         "recommendations": recommendations,
         "citations": citations,
         "result_set_id": result_set_id,
-        "ui_action": "show_assistant_results" if should_show_results else "none",
+        "ui_action": action,
     }
 
 
@@ -226,10 +250,14 @@ def _call_model(
     candidates: list[dict[str, Any]],
     current_detail: dict[str, Any] | None,
     history: list[dict[str, str]],
+    on_answer_delta: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
-    """向 OpenAI 兼容客户端发送受约束的知识助手请求。"""
+    """向百炼助手模型发送受约束的知识库请求。"""
+    settings = get_settings()
+    if settings.llm_provider.lower() != "dashscope":
+        raise KnowledgeAssistantModelError("知识助手当前只支持已配置的百炼模型。")
     try:
-        llm_client = get_llm_client()
+        llm_client = get_llm_client("dashscope", settings.llm_assistant_model)
     except ValueError as exc:
         raise KnowledgeAssistantModelError(str(exc)) from exc
     if not hasattr(llm_client, "client"):
@@ -242,17 +270,20 @@ def _call_model(
             "excerpt": item["excerpt"], "building_types": item["building_types"],
             "location": item["location_raw"], "scale": item["scale_raw"],
             "site_contexts": item["site_contexts"], "matched_fields": item["matched_fields"],
-            "limitations": item["limitations"], "review_status": item["review_status"],
+            "limitations": [value for value in item["limitations"] if "复核" not in value and "审核" not in value],
         }, ensure_ascii=False))
     current_text = ""
     if current_detail:
         current_text = str(current_detail.get("content", ""))[:7000]
     system_prompt = (
         "你是 ArchCritic 建筑知识导航与学习教练，不评分、不替代教师。"
-        "只使用给定当前卡片和候选卡回答，不得创造任何卡片编号、书名、规范条文、结构或材料事实。"
-        "待复核内容只能作为学习候选，并要用克制语气说明。"
-        "必须返回 JSON 对象，字段为 answer、clarification_required、recommendations。"
+        "优先依据给定当前卡片和候选卡回答，并可结合可靠的建筑学通识作拓展补充；"
+        "拓展内容必须与卡片原文明确区分，不得创造卡片编号、书名、规范条文或项目事实。"
+        "必须返回 JSON 对象，并严格按 answer、clarification_required、recommendations 的顺序输出字段。"
         "recommendations 是数组，每项只有 id、reason、limitations；id 必须来自候选列表。"
+        "answer 只写对用户有用的解释，不写任何 KC 或 PBC 编号，不逐条复述卡片标题；编号与标题只放入 recommendations。"
+        "凡在回答中实际采用的候选卡都必须完整写入 recommendations，不限制数量，也不得遗漏。"
+        "answer 不得出现待复核、待审核、专业内容待复核等内部流程状态；界面会统一显示 AI 内容使用提示。"
         "普通问答、问题拆解和当前卡片问答可以返回空 recommendations。"
         "回答使用简洁中文，不使用 Markdown 表格。"
     )
@@ -272,13 +303,20 @@ def _call_model(
         "messages": messages,
         "temperature": 0.2,
         "max_tokens": min(llm_client.max_tokens, 1400),
-        "timeout": get_settings().knowledge_assistant_timeout_seconds,
+        "timeout": settings.knowledge_assistant_timeout_seconds,
         "response_format": {"type": "json_object"},
     }
     if llm_client.extra_body:
-        create_kwargs["extra_body"] = llm_client.extra_body
+        create_kwargs["extra_body"] = dict(llm_client.extra_body)
+    if tool == "current_card_qa":
+        create_kwargs["extra_body"] = {
+            **dict(create_kwargs.get("extra_body") or {}),
+            "enable_search": True,
+        }
     if llm_client.reasoning_effort:
         create_kwargs["reasoning_effort"] = llm_client.reasoning_effort
+    if on_answer_delta:
+        create_kwargs["stream"] = True
     try:
         try:
             response = llm_client.client.chat.completions.create(**create_kwargs)
@@ -289,7 +327,19 @@ def _call_model(
     except Exception as exc:
         logger.exception("建筑知识助手调用默认模型失败")
         raise KnowledgeAssistantModelError("AI 助手调用失败，请稍后重试。") from exc
-    content = response.choices[0].message.content if response.choices else ""
+    if on_answer_delta:
+        raw_content = ""
+        emitted_answer = ""
+        for chunk in response:
+            delta = chunk.choices[0].delta.content if chunk.choices else ""
+            raw_content += str(delta or "")
+            partial_answer = _extract_partial_answer(raw_content)
+            if len(partial_answer) > len(emitted_answer):
+                on_answer_delta(partial_answer[len(emitted_answer):])
+                emitted_answer = partial_answer
+        content = raw_content
+    else:
+        content = response.choices[0].message.content if response.choices else ""
     try:
         return json.loads(_extract_json(str(content or "")))
     except (TypeError, ValueError, json.JSONDecodeError) as exc:
@@ -420,6 +470,16 @@ def _clean_list(value: Any) -> list[str]:
     return [str(item).strip()[:120] for item in value if str(item).strip()] if isinstance(value, list) else []
 
 
+def _clean_public_answer(value: str) -> str:
+    """清除面向用户回答中的卡片编号和内部流程状态。"""
+    cleaned = re.sub(r"[（(]\s*(?:KC-[A-Z]+-\d+|PBC-\d+)\s*[）)]", "", value, flags=re.I)
+    cleaned = PUBLIC_CARD_ID_PATTERN.sub("", cleaned)
+    cleaned = re.sub(r"(?:专业内容|上述内容|内容)?(?:均|仍|尚)?(?:待专业复核|待复核|待审核)[。；;]?", "", cleaned)
+    cleaned = re.sub(r"\s+([，。；：、])", r"\1", cleaned)
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
+
 def _default_reason(candidate: dict[str, Any]) -> str:
     """模型遗漏理由时根据已匹配字段生成可核对短说明。"""
     fields = "、".join(candidate["matched_fields"][:3]) or "主题"
@@ -433,3 +493,29 @@ def _extract_json(content: str) -> str:
     if start < 0 or end <= start:
         raise ValueError("missing json object")
     return content[start:end + 1]
+
+
+def _extract_partial_answer(content: str) -> str:
+    """从尚未结束的 JSON 流中安全读取 answer 字符串。"""
+    match = re.search(r'"answer"\s*:\s*"', content)
+    if not match:
+        return ""
+    encoded = content[match.end():]
+    escaped = False
+    end = len(encoded)
+    for index, char in enumerate(encoded):
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+        elif char == '"':
+            end = index
+            break
+    fragment = encoded[:end]
+    if fragment.endswith("\\"):
+        fragment = fragment[:-1]
+    try:
+        return json.loads(f'"{fragment}"')
+    except json.JSONDecodeError:
+        return fragment.replace("\\n", "\n").replace('\\"', '"').replace("\\\\", "\\")

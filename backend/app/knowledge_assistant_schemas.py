@@ -10,10 +10,7 @@ KnowledgeAssistantTool = Literal[
     "none",
     "case_recommendation",
     "knowledge_query",
-    "similar_cases",
-    "case_compare",
     "learning_path",
-    "problem_breakdown",
     "current_card_qa",
 ]
 
@@ -83,3 +80,13 @@ class KnowledgeAssistantMessageRead(BaseModel):
     created_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+
+class KnowledgeConversationRead(BaseModel):
+    """返回历史会话列表中的一条摘要。"""
+
+    id: str
+    title: str
+    selected_tool: str
+    message_count: int = 0
+    updated_at: datetime | None = None

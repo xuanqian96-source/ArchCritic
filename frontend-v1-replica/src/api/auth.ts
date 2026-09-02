@@ -6,6 +6,10 @@ export function getCurrentUser(): Promise<LocalUser> {
   return requestJson("/api/auth/me", { timeoutMs: 15_000 });
 }
 
+export function checkAccountAvailability(account: string): Promise<{ available: boolean }> {
+  return requestJson(`/api/auth/account-availability?account=${encodeURIComponent(account)}`, { timeoutMs: 10_000 });
+}
+
 export function registerAccount(payload: { username: string; password: string; display_name: string }): Promise<LocalUser> {
   return requestJson("/api/auth/register", {
     method: "POST",

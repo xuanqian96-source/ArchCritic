@@ -615,6 +615,7 @@ def build_scheme_overall_report(
             "knowledge_references": build_knowledge_reference_snapshot(
                 evaluation_context.get("references") or []
             ),
+            "drawing_preprocess": evaluation_context.get("drawing_preprocess") or {},
             "evidence_inventory": evaluation_context.get("evidence_inventory") or {},
             "taskbook_compliance": evaluation_context.get("taskbook_compliance") or {},
         },

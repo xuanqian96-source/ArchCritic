@@ -101,28 +101,12 @@ def get_llm_client(
     if resolved_provider == "mock":
         return MockLLMClient()
 
-    if resolved_provider == "openai":
-        if not settings.openai_api_key:
-            raise ValueError("当前未配置 OpenAI API Key，无法启用真实模型。")
-        from app.llm.openai_client import OpenAILLMClient
-
-        return OpenAILLMClient(
-            settings.openai_api_key,
-            resolved_model,
-            timeout_seconds=settings.llm_timeout_seconds,
-            agent_timeout_seconds=settings.llm_agent_timeout_seconds,
-            review_timeout_seconds=settings.llm_review_timeout_seconds,
-            max_tokens=settings.llm_max_tokens,
-            image_detail=settings.llm_image_detail,
-            trust_env=settings.llm_trust_env,
-        )
-
     if resolved_provider == "dashscope":
         if not settings.dashscope_api_key:
             raise ValueError("当前未配置百炼 API Key，无法启用百炼模型。")
-        from app.llm.openai_client import OpenAILLMClient
+        from app.llm.dashscope_client import DashScopeLLMClient
 
-        return OpenAILLMClient(
+        return DashScopeLLMClient(
             settings.dashscope_api_key,
             resolved_model,
             settings.dashscope_base_url,
@@ -134,25 +118,6 @@ def get_llm_client(
             image_detail=settings.llm_image_detail,
             extra_body={"enable_thinking": False},
             default_headers={"X-DashScope-OssResourceResolve": "enable"},
-            trust_env=settings.llm_trust_env,
-        )
-
-    if resolved_provider == "gemini":
-        if not settings.gemini_api_key:
-            raise ValueError("当前未配置 Gemini API Key，无法启用 Gemini 模型。")
-        from app.llm.openai_client import OpenAILLMClient
-
-        return OpenAILLMClient(
-            settings.gemini_api_key,
-            resolved_model,
-            settings.gemini_base_url,
-            "json_object",
-            timeout_seconds=settings.llm_timeout_seconds,
-            agent_timeout_seconds=settings.llm_agent_timeout_seconds,
-            review_timeout_seconds=settings.llm_review_timeout_seconds,
-            max_tokens=settings.llm_max_tokens,
-            image_detail=settings.llm_image_detail,
-            reasoning_effort="none",
             trust_env=settings.llm_trust_env,
         )
 

@@ -3,7 +3,7 @@ import { createContext } from "react";
 import type { Attachment, ChatMessage, DrawingFile, EvaluationStreamEvent, OverallReport, Project, Submission, SubmissionHistory } from "../types/api";
 
 export const DEFAULT_AGENTS = ["function_agent", "site_agent", "form_agent", "structure_agent", "review_agent"];
-export const DEFAULT_MODEL = { provider: "dashscope", model: "qwen3.6-plus", label: "qwen3.6-plus" };
+export const DEFAULT_MODEL = { provider: "dashscope", model: "qwen3.8-max", label: "qwen3.8-max" };
 export const ACCEPTED_DRAWING_TYPES = ["application/pdf"];
 
 export interface DraftValues {
@@ -68,7 +68,8 @@ export interface WorkspaceState {
   startEvaluation: () => Promise<void>;
   pauseEvaluation: () => Promise<void>;
   downloadCurrentReport: () => void;
-  sendQuestion: (content: string) => Promise<void>;
+  sendQuestion: (content: string, tool?: ChatMessage["tool"], signal?: AbortSignal, onDelta?: (text: string) => void) => Promise<void>;
+  refreshChatMessages: () => Promise<ChatMessage[]>;
   inheritProject: (projectId: number, sourceSubmissionId?: number) => Promise<void>;
   refreshProjects: () => Promise<void>;
   syncProjectName: (projectIds: number[], name: string) => void;
@@ -210,8 +211,7 @@ export function cleanSavedDescription(description?: string | null) {
   return description === "未填写设计说明。" ? "" : description ?? "";
 }
 
-// 旧草稿可能保存过演示模型，恢复时统一转成当前真实默认模型。
-export function normalizeSavedModel(provider?: string | null, model?: string | null) {
-  if (provider === "gemini") return { provider, model: model || "gemini-2.5-flash" };
-  return { provider: "dashscope", model: model && model !== "demo" ? model : "qwen3.6-plus" };
+// 当前产品统一使用千问；旧草稿中的其他模型值也在恢复时收敛到同一配置。
+export function normalizeSavedModel(_provider?: string | null, _model?: string | null) {
+  return { provider: "dashscope", model: "qwen3.8-max" };
 }

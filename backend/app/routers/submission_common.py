@@ -4,7 +4,7 @@ from fastapi import HTTPException
 
 from app.config import get_settings
 
-REAL_LLM_PROVIDERS = {"openai", "dashscope", "gemini"}
+REAL_LLM_PROVIDERS = {"dashscope"}
 ALLOWED_DRAWING_TYPES = {
     "site",
     "plan",
@@ -40,9 +40,7 @@ ALLOWED_ATTACHMENT_TYPES = {
 CANCELLED_SUBMISSIONS: set[int] = set()
 MODEL_PRESETS = {
     "mock": "demo",
-    "openai": "gpt-4o-mini",
-    "dashscope": "qwen3.6-plus",
-    "gemini": "gemini-2.5-flash",
+    "dashscope": "qwen3.8-max",
 }
 
 
@@ -68,11 +66,11 @@ def resolve_llm_provider(provider: str | None) -> str:
 
 
 def resolve_llm_model(provider: str, model: str | None) -> str:
-    """解析本次评图使用的模型名称。"""
+    """解析评图模型；百炼评图始终使用服务端固定的 Max 模型。"""
+    settings = get_settings()
+    if provider == "dashscope":
+        return settings.llm_model
     cleaned_model = (model or "").strip()
     if cleaned_model:
         return cleaned_model
-    settings = get_settings()
-    if provider == settings.llm_provider.lower() and settings.llm_model:
-        return settings.llm_model
     return MODEL_PRESETS.get(provider, settings.llm_model)

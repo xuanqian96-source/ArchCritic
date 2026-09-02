@@ -132,6 +132,15 @@ def ensure_sqlite_columns(engine: Engine) -> None:
                     text("ALTER TABLE drawing_files ADD COLUMN sort_order INTEGER DEFAULT 0")
                 )
 
+        if "report_references" in table_names:
+            reference_columns = {
+                column["name"] for column in inspector.get_columns("report_references")
+            }
+            if "library_item_id" not in reference_columns:
+                connection.execute(
+                    text("ALTER TABLE report_references ADD COLUMN library_item_id VARCHAR(30) DEFAULT ''")
+                )
+
         if "attachments" in table_names:
             attachment_columns = {
                 column["name"] for column in inspector.get_columns("attachments")
@@ -162,6 +171,23 @@ def ensure_sqlite_columns(engine: Engine) -> None:
             if "evaluation_context" not in report_columns:
                 connection.execute(
                     text("ALTER TABLE overall_reports ADD COLUMN evaluation_context JSON DEFAULT '{}'")
+                )
+
+        if "chat_messages" in table_names:
+            chat_columns = {
+                column["name"] for column in inspector.get_columns("chat_messages")
+            }
+            if "tool" not in chat_columns:
+                connection.execute(
+                    text("ALTER TABLE chat_messages ADD COLUMN tool VARCHAR(50) DEFAULT 'none'")
+                )
+            if "citations" not in chat_columns:
+                connection.execute(
+                    text("ALTER TABLE chat_messages ADD COLUMN citations JSON DEFAULT '[]'")
+                )
+            if "report_updated" not in chat_columns:
+                connection.execute(
+                    text("ALTER TABLE chat_messages ADD COLUMN report_updated BOOLEAN DEFAULT 0")
                 )
 
 

@@ -12,7 +12,7 @@ from app.llm.dashscope_files import DashScopeUploadError
 from app.models import AgentEvaluation, OverallReport, ReportReference, Submission
 from app.knowledge_selection import prepare_reference_bundle
 from app.schemas import OverallReportRead
-from app.wiki import load_wiki_references
+from app.services.knowledge_library import load_library_references
 
 def save_report_data(
     db: Session,
@@ -157,6 +157,7 @@ def save_reference_snapshots(
                 report_id=report_id,
                 position=index,
                 reference_id=str(item.get("reference_id") or f"K{index}"),
+                library_item_id=str(item.get("library_item_id") or ""),
                 title=str(item.get("title") or ""),
                 source_type=str(item.get("source_type") or ""),
                 excerpt=str(item.get("excerpt") or ""),
@@ -179,6 +180,7 @@ def load_report_reference_snapshots(db: Session, submission_id: int) -> list[dic
     return [
         {
             "reference_id": item.reference_id,
+            "library_item_id": item.library_item_id,
             "title": item.title,
             "source_type": item.source_type,
             "excerpt": item.excerpt,
@@ -195,17 +197,16 @@ def load_report_reference_snapshots(db: Session, submission_id: int) -> list[dic
 def load_submission_wiki_references(wiki_dir: str, submission: Submission) -> list[dict]:
     """根据提交上下文从完整 Wiki 中检索相关知识依据。"""
     project = submission.project
-    references = load_wiki_references(
+    references = load_library_references(
         wiki_dir,
-        submission.design_stage,
-        limit=40,
-        query_context={
+        {
             "project_name": project.name,
             "building_type": project.building_type,
             "design_stage": submission.design_stage,
             "description": submission.description,
             "drawing_types": [item.drawing_type for item in submission.drawing_files],
         },
+        limit=40,
     )
     settings = get_settings()
     return prepare_reference_bundle(

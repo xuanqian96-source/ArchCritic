@@ -1,7 +1,8 @@
-"""验证演示模型客户端可以生成结构化评图结果。"""
+"""验证演示模式和百炼双模型配置。"""
 
 from app.config import get_settings
 from app.llm.client import get_llm_client
+from app.routers.submission_common import resolve_llm_model
 
 
 def test_mock_llm_returns_structured_report():
@@ -37,30 +38,34 @@ def test_dashscope_provider_requires_api_key(monkeypatch):
         get_settings.cache_clear()
 
 
-def test_gemini_provider_requires_api_key(monkeypatch):
-    """确认 Gemini 模型未配置 Key 时会给出明确提示。"""
-    monkeypatch.setenv("GEMINI_API_KEY", "")
-    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+def test_qwen_review_and_assistant_models_are_separated(monkeypatch):
+    """确认评图与两类助手使用各自固定的千问模型。"""
+    monkeypatch.setenv("LLM_PROVIDER", "dashscope")
+    monkeypatch.setenv("LLM_MODEL", "qwen3.8-max")
+    monkeypatch.setenv("LLM_ASSISTANT_MODEL", "qwen3.7-plus")
     get_settings.cache_clear()
 
     try:
-        get_llm_client("gemini")
-    except ValueError as exc:
-        assert "Gemini API Key" in str(exc)
-    else:
-        raise AssertionError("未配置 Gemini Key 时不应创建模型客户端。")
+        settings = get_settings()
+        assert settings.llm_model == "qwen3.8-max"
+        assert settings.llm_assistant_model == "qwen3.7-plus"
+        assert resolve_llm_model("dashscope", "qwen3.6-plus") == "qwen3.8-max"
     finally:
         get_settings.cache_clear()
 
 
-def test_gemini_provider_disables_extra_thinking(monkeypatch):
-    """确认 Gemini 使用较短评图输出时不会把 JSON 提前截断。"""
-    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
-    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+def test_dashscope_client_keeps_requested_qwen_model(monkeypatch):
+    """确认百炼客户端不会把指定模型改回旧值。"""
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "test-key")
+    monkeypatch.setenv("LLM_PROVIDER", "dashscope")
     get_settings.cache_clear()
 
     try:
-        client = get_llm_client("gemini")
-        assert client.reasoning_effort == "none"
+        review_client = get_llm_client("dashscope", "qwen3.8-max")
+        assistant_client = get_llm_client("dashscope", "qwen3.7-plus")
+        assert review_client.model == "qwen3.8-max"
+        assert assistant_client.model == "qwen3.7-plus"
+        assert review_client.extra_body == {"enable_thinking": False}
+        assert assistant_client.extra_body == {"enable_thinking": False}
     finally:
         get_settings.cache_clear()

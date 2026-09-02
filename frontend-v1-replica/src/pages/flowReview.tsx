@@ -5,38 +5,16 @@ import { apiUrl } from "../api/client";
 import { Button, Card, FlowErrorCard, PageTitle, Sidebar, Steps } from "../components";
 import { useWorkspace } from "../state/workspace";
 import { EditIcon } from "./flowSetup";
-import { collapseConfirmText, getAgentSpecs, getStageAgentTypes, modelOptions, useRememberFlowRoute, validateAgentStep, validateProjectInfoStep, validateUploadStep } from "./flowShared";
+import { collapseConfirmText, getAgentSpecs, getStageAgentTypes, useRememberFlowRoute, validateAgentStep, validateProjectInfoStep, validateUploadStep } from "./flowShared";
 
 export function ConfirmPage({ go }: PageProps) {
   useRememberFlowRoute("confirm");
   const { attachments, draft, drawings, saveDraft, setDraftField, startEvaluation } = useWorkspace();
-  const [modelOpen, setModelOpen] = useState(false);
-  const [hoveredModelValue, setHoveredModelValue] = useState("");
   const [infoEditing, setInfoEditing] = useState(false);
   const [infoSaving, setInfoSaving] = useState(false);
   const [error, setError] = useState("");
-  const modelValue = draft.modelProvider === "gemini" ? "gemini|gemini-2.5-flash" : "dashscope|qwen3.6-plus";
-  const modelLabel = draft.modelProvider === "gemini" ? "gemini-2.5-flash" : "qwen3.6-plus";
   const enabledAgentCards = getAgentSpecs(draft.enabledAgents);
   const descriptionText = collapseConfirmText(draft.description);
-  useEffect(() => {
-    if (!modelOpen) return;
-    const close = (event: PointerEvent) => {
-      const target = event.target as HTMLElement;
-      if (target.closest("[data-confirm-model-menu]")) return;
-      setModelOpen(false);
-    };
-    document.addEventListener("pointerdown", close);
-    return () => document.removeEventListener("pointerdown", close);
-  }, [modelOpen]);
-  const changeModel = (value: string) => {
-    const [provider, model] = value.split("|");
-    setDraftField("modelProvider", provider);
-    setDraftField("modelName", model);
-    setDraftField("modelLabel", model);
-    setModelOpen(false);
-    setHoveredModelValue("");
-  };
   const toggleInfoEditing = () => {
     if (infoSaving) return;
     if (!infoEditing) {
@@ -72,23 +50,8 @@ export function ConfirmPage({ go }: PageProps) {
       <Steps current={4} />
       <div className="absolute right-[23px] top-[155px] flex gap-3">
         <Button kind="white" className="report-top-action-button w-[115px]" onClick={() => go("upload")}>返回修改</Button>
-        <div className="relative" data-confirm-model-menu>
-          {modelOpen && (
-            <div className="flow-popover figma-shadow absolute bottom-[46px] right-0 z-20 w-[188px] overflow-hidden rounded-[12px] border border-[#e8ebef] bg-white p-1" onMouseLeave={() => setHoveredModelValue("")}>
-              {modelOptions.map((option) => {
-                const active = modelValue === option.value && !hoveredModelValue;
-                const hovered = hoveredModelValue === option.value;
-                return (
-                  <button type="button" key={option.value} onMouseEnter={() => setHoveredModelValue(option.value)} onClick={() => changeModel(option.value)} className={`confirm-model-option flex h-9 w-full items-center rounded-[9px] pl-5 pr-3 text-left text-[#171719] ${active || hovered ? "bg-[#eef0f4]" : ""}`}>
-                    {option.label}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-          <button type="button" onClick={() => setModelOpen((current) => !current)} className="confirm-model-button relative h-10 w-[224px] rounded-[12px] border border-[#e8ebef] bg-white px-4 text-left">
-            <b className="confirm-model-label text-[#171719]">模型</b><span className="confirm-model-value ml-4 text-[#171719]">{modelLabel}</span><span className={`report-model-arrow ${modelOpen ? "rotate-right" : ""}`} />
-          </button>
+        <div className="confirm-model-button flex h-10 w-[224px] items-center rounded-[12px] border border-[#e8ebef] bg-white px-4" title="当前统一使用千问模型">
+          <b className="confirm-model-label text-[#171719]">模型</b><span className="confirm-model-value ml-4 text-[#171719]">qwen3.8-max</span>
         </div>
         <Button kind="purple" className="report-top-action-button w-[132px] rounded-[12px]" onClick={() => void confirm()}>确认提交</Button>
       </div>

@@ -50,13 +50,13 @@ def main() -> None:
     run_parser = subparsers.add_parser("run", help="运行并冻结一个实验条件")
     run_parser.add_argument("--condition", choices=PAPER_CONDITIONS, required=True)
     run_parser.add_argument("--provider", default="dashscope")
-    run_parser.add_argument("--model", default="qwen3.6-plus")
+    run_parser.add_argument("--model", default="qwen3.8-max")
     run_parser.add_argument("--workers", type=int, default=1)
 
     judge_parser = subparsers.add_parser("judge", help="对冻结结果做严格语义核对")
     judge_parser.add_argument("--condition", choices=PAPER_CONDITIONS, required=True)
     judge_parser.add_argument("--provider", default="dashscope")
-    judge_parser.add_argument("--model", default="qwen3.6-plus")
+    judge_parser.add_argument("--model", default="qwen3.8-max")
 
     local_judge_parser = subparsers.add_parser(
         "judge-local", help="不向外部发送私有答案，按逐条决定核对冻结结果"

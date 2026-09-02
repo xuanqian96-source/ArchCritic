@@ -1,6 +1,7 @@
 """验证知识库浏览接口可以读取最终版目录结构、正文和图片。"""
 
 from pathlib import Path
+from urllib.parse import unquote
 from uuid import uuid4
 
 import pytest
@@ -10,7 +11,7 @@ from PIL import Image
 from app.config import get_settings
 from app.database import init_db
 from app.main import app
-from app.services.knowledge_library import _specific_case_category
+from app.services.knowledge_library import _build_display_content, _first_thumbnail_url, _specific_case_category
 from app.services.knowledge_assistant import _normalize_area, extract_conditions
 
 
@@ -27,6 +28,124 @@ def test_specific_case_categories():
     assert _specific_case_category("艺术展馆与社区教育设施", "Robert Olnick Pavilion") == "美术馆"
     assert _specific_case_category("其他公共建筑", "景德镇川上行景仰书院") == "酒店"
     assert _specific_case_category("其他公共建筑", "舟山海洋文化艺术中心二期") == "文化中心"
+
+
+def test_case_thumbnail_prefers_building_photo(tmp_path):
+    """确认技术图先出现时，案例封面仍优先采用后面的建筑实景。"""
+    current_dir = tmp_path / "02_建筑案例" / "博物馆"
+    content = "\n".join([
+        "![[02_建筑案例/_图片/PBC-001/总平面图.jpg]]",
+        "![[02_建筑案例/_图片/PBC-001/建筑外形.jpg]]",
+    ])
+    thumbnail = _first_thumbnail_url(content, tmp_path, current_dir)
+    assert unquote(thumbnail).endswith("PBC-001/建筑外形.jpg")
+
+
+def test_library_detail_builds_consistent_reading_content():
+    """确认详情页隐藏后台资料与测试内容，并修复旧编号和断开的箭头。"""
+    case_body = r"""# 测试案例
+
+## 案例概览
+
+与详情页导语重复。
+
+## 基本信息
+
+|项目|内容|
+|---|---|
+|建筑师|测试团队|
+
+## 5.1 场地关系
+
+城市广场
+
+↓
+
+入口雨棚
+
+→
+
+共享大厅
+
+## 6. 功能组织
+
+正文保留。
+
+## 图纸阅读重点
+
+- MEDIA-PBC-001-001
+
+## 可迁移的设计方法
+
+- **最值得学习的不是建筑外形，而是空间组织。**
+- ## 1\. 先建立共享核心
+
+问题 → 策略 → 结果。
+
+- 迁移时同时核对场地、功能、流线、结构和运营条件。
+"""
+    display_case = _build_display_content(case_body, "case")
+    assert "案例概览" not in display_case
+    assert "基本信息" not in display_case
+    assert "|建筑师|" not in display_case
+    assert "### 场地关系" in display_case
+    assert "### 功能组织" in display_case
+    assert "城市广场 → 入口雨棚 → 共享大厅" in display_case
+    assert "图纸阅读重点" not in display_case
+    assert "MEDIA-PBC-001-001" not in display_case
+    assert "- **最值得学习" not in display_case
+    assert "**最值得学习的不是建筑外形，而是空间组织。**" in display_case
+    assert "### 先建立共享核心" in display_case
+    assert "迁移时同时核对" not in display_case
+
+    knowledge_body = """# 测试知识卡
+
+## 核心原理
+
+正文保留。
+
+## 原始 PDF
+
+![[01_原始资料/设计规范/测试规范.pdf]]
+
+## 观察或自测任务
+
+测试题不在详情重复显示。
+
+## 答案要点
+
+答案只供知识测试读取。
+
+## 适用边界
+
+边界保留。
+"""
+    display_knowledge = _build_display_content(knowledge_body, "knowledge")
+    assert "原始 PDF" not in display_knowledge
+    assert "测试规范.pdf" not in display_knowledge
+    assert "观察或自测任务" not in display_knowledge
+    assert "答案只供知识测试读取" not in display_knowledge
+    assert "## 适用边界" in display_knowledge
+
+    repeated_level = """# 测试知识卡
+
+## 学习层级
+
+L2 进阶
+
+## 核心原理
+
+正文保留。
+"""
+    display_level = _build_display_content(repeated_level, "knowledge")
+    assert "学习层级" not in display_level
+    assert "L2 进阶" not in display_level
+    assert "## 核心原理" in display_level
+
+    caption = _build_display_content("![[image.png]]\n\n\\(室内木结构实景\\)", "case")
+    assert "\\(" not in caption
+    assert "\\)" not in caption
+    assert "（室内木结构实景）" in caption
 
 
 def test_knowledge_assistant_condition_and_area_normalization():

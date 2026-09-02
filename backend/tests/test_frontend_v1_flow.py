@@ -65,7 +65,7 @@ async def test_frontend_v1_complete_api_flow(tmp_path, monkeypatch):
             f"/api/submissions/{submission_id}/evaluate-demo"
         )
         export_response = await client.get(
-            f"/api/submissions/{submission_id}/report/export"
+            f"/api/submissions/{submission_id}/report/export?format=pdf"
         )
         chat_response = await client.post(
             f"/api/submissions/{submission_id}/chat",
@@ -109,7 +109,9 @@ async def test_frontend_v1_complete_api_flow(tmp_path, monkeypatch):
     assert attachment_response.status_code == 201
     assert report_response.status_code == 200
     assert export_response.status_code == 200
-    assert "# ArchCritic 评图报告" in export_response.text
+    assert export_response.headers["content-type"] == "application/pdf"
+    assert "archcritic-report-" in export_response.headers["content-disposition"]
+    assert export_response.content.startswith(b"%PDF")
     assert chat_response.status_code == 200
     assert len(chat_list_response.json()) == 2
     assert clone_response.status_code == 201

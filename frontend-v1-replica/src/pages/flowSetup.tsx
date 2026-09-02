@@ -1,12 +1,14 @@
 // 项目建立流程：项目首页、新建方式和任务书信息录入。
 import { useEffect, useRef, useState, type ChangeEvent, type CSSProperties } from "react";
 import type { PageProps } from "../App";
-import { Button, Card, FlowActions, FlowErrorCard, PageTitle, Sidebar } from "../components";
+import { AppPromptOverlay, Button, Card, FlowActions, FlowErrorCard, PageTitle, Sidebar } from "../components";
+import { InformationDetailModal, InformationListModal } from "../components/helpComponents";
 import { readSubmissionRoute } from "../state/flowRoutes";
 import { useProfile } from "../state/profile";
 import { getCachedProjectGroups, getLatestVersion, loadProjectGroups, PINNED_PROJECTS_CHANGED_EVENT, readPinnedProjectIds, sortPinnedProjectGroups, type ProjectGroup, type ProjectVersion } from "../state/projectGroups";
 import { getScoreLevel } from "../scoreLevels";
 import { useWorkspace } from "../state/workspace";
+import { DUPLICATE_PROJECT_NAME_MESSAGE } from "../state/workspaceShared";
 import type { Attachment } from "../types/api";
 import { announcements, buildingTypeOptions, FlowShell, gradeOptions, guideItems, type InformationItem, saveDraftAtRoute, useRememberFlowRoute, validateProjectInfoStep, validateUniqueProjectName } from "./flowShared";
 
@@ -16,7 +18,7 @@ export function DashboardPage({ go }: PageProps) {
 
 // 渲染项目首页主体，供新建方式弹窗背景复用。
 function DashboardLayout({ go }: PageProps) {
-  const { projects, project: activeProject, evaluation, openProject, openSubmission } = useWorkspace();
+  const { projects, project: activeProject, evaluation, openProject, openSubmission, prefetchSubmission } = useWorkspace();
   const { profile } = useProfile();
   const [dashboardProjects, setDashboardProjects] = useState<ProjectGroup[]>(() => getCachedProjectGroups(projects));
   const [detail, setDetail] = useState<InformationItem | null>(null);
@@ -55,18 +57,22 @@ function DashboardLayout({ go }: PageProps) {
     else if (latest.submission.status === "evaluating") go("processing");
     else go(readSubmissionRoute(latest.submission.id, "info"));
   };
+  const prefetchDashboardProject = (item: ProjectGroup) => {
+    const latest = getLatestVersion(item);
+    if (latest) prefetchSubmission(latest.submission.id, { project: latest.project, submission: latest.submission });
+  };
 
   return (
     <div className="font-chat relative h-full w-full bg-[#f4f6f8]">
       <Sidebar go={go} />
-      <PageTitle title={`欢迎回来，${profile.displayName}`} subtitle="继续提交图纸，或查看历史评图趋势。" />
+      <PageTitle title={`欢迎回来，${profile.displayName}`} subtitle="探索知识与相关案例，辅助完善你的公共建筑设计，回顾历史成果与报告" />
       <section className="figma-shadow absolute left-[307px] top-[183px] h-[624px] w-[803px] rounded-[18px] border border-[#e8ebef] bg-white">
         <h2 className="absolute left-[23px] top-[23px] text-[18px] font-bold leading-6">最近评图项目</h2>
         <p className="absolute left-[23px] top-[51px] text-[12px] text-[#6b7280]">查看正在进行、待确认和已完成的设计评图。</p>
         {visibleDashboardProjects.length === 0 ? <DashboardEmpty /> : (
           <>
             <div className="absolute left-[24px] top-[92px] grid grid-cols-2 gap-x-[24px] gap-y-[24px]">
-              {visibleDashboardProjects.map((item) => <DashboardProjectCard item={item} progress={item.projects.some((project) => project.id === activeProject?.id) ? evaluation.progress : 0} key={item.key} onOpen={() => void openDashboardProject(item)} />)}
+              {visibleDashboardProjects.map((item) => <DashboardProjectCard item={item} progress={item.projects.some((project) => project.id === activeProject?.id) ? evaluation.progress : 0} key={item.key} onOpen={() => void openDashboardProject(item)} onPrefetch={() => prefetchDashboardProject(item)} />)}
             </div>
             <div className="absolute bottom-[14px] left-[24px] flex h-[34px] w-[756px] items-center rounded-[10px] bg-[#f7f8fa] px-4 text-[12px] text-[#6b7280]">
               最近更新：{visibleDashboardProjects[0]?.name ?? "正在读取项目状态"} {getLatestVersion(visibleDashboardProjects[0]) ? projectState(visibleDashboardProjects[0]).description : "尚未提交评图资料"}
@@ -75,8 +81,8 @@ function DashboardLayout({ go }: PageProps) {
         )}
       </section>
       <DashboardInformationCard title="公告" subtitle="展示系统能力更新和使用提醒。" items={announcements.slice(0, 4)} className="top-[181px] h-[330px]" onDetail={setDetail} onMore={() => { setListTitle("历史公告"); setListItems(announcements); }} />
-      <DashboardInformationCard title="新手引导" subtitle="提供首次评图流程和常见问题。" items={guideItems.slice(0, 3)} className="top-[532px] h-[275px]" onDetail={setDetail} onMore={() => { setListTitle("操作指引与常见问题"); setListItems(guideItems); }} />
-      {listItems.length > 0 && <InformationListModal title={listTitle} items={listItems} onDetail={setDetail} onClose={() => setListItems([])} />}
+      <DashboardInformationCard title="常见问题" subtitle="汇总操作指引和常见问题。" items={guideItems.slice(0, 3)} className="top-[532px] h-[275px]" onDetail={setDetail} onMore={() => { setListTitle("操作指引与常见问题"); setListItems(guideItems); }} />
+      {listItems.length > 0 && <InformationListModal title={listTitle} items={listItems} onClose={() => setListItems([])} />}
       {detail && <InformationDetailModal item={detail} onClose={() => setDetail(null)} />}
     </div>
   );
@@ -107,11 +113,11 @@ interface DashboardProjectState {
 }
 
 // 渲染首页项目卡片。
-function DashboardProjectCard({ item, progress, onOpen }: { item: ProjectGroup; progress: number; onOpen: () => void }) {
+function DashboardProjectCard({ item, progress, onOpen, onPrefetch }: { item: ProjectGroup; progress: number; onOpen: () => void; onPrefetch: () => void }) {
   const state = projectState(item, progress);
   const latest = getLatestVersion(item);
   return (
-    <article className="figma-shadow relative h-[140px] w-[366px] rounded-[12px] border border-[#e8ebef] bg-[#fafbfc]">
+    <article className="figma-shadow relative h-[140px] w-[366px] rounded-[12px] border border-[#e8ebef] bg-[#fafbfc]" onPointerEnter={onPrefetch} onFocusCapture={onPrefetch}>
       <span className={`absolute left-[18px] top-[20px] flex h-8 w-8 items-center justify-center rounded-full ${state.markerBackground}`} style={state.markerBackgroundStyle}><span className={`project-status-dot h-[10px] w-[10px] rounded-full ${state.markerDot}`} style={state.markerDotStyle} /></span>
       <h3 className="project-card-title-text absolute left-[64px] top-[17px] max-w-[202px] truncate">{item.name}</h3>
       <p className="absolute left-[64px] top-[43px] max-w-[202px] truncate text-[11px] font-medium leading-4 text-[#6b7280]">{latest?.submission.design_stage ?? "尚未选择阶段"} · {formatDate(latest?.submission.updated_at ?? latest?.submission.created_at ?? item.latestProject.created_at)}</p>
@@ -168,39 +174,6 @@ function DashboardInformationCard({ title, subtitle, items, className, onDetail,
       </div>
       <button type="button" className="detail-link-text absolute bottom-[18px] right-7" onClick={onMore}>查看更多</button>
     </Card>
-  );
-}
-
-// 渲染公告或引导详情弹窗。
-function InformationDetailModal({ item, onClose }: { item: InformationItem; onClose: () => void }) {
-  return (
-    <div className="absolute inset-0 z-40 bg-[#171719]/30" onClick={onClose}>
-      <section className="figma-shadow absolute left-[476px] top-[156px] h-[508px] w-[584px] rounded-[22px] border border-[#e8ebef] bg-white p-7" onClick={(event) => event.stopPropagation()}>
-        <h2 className="pr-9 text-[22px] font-bold leading-8">{item.title}</h2>
-        <button type="button" className="absolute right-6 top-6 flex h-7 w-7 items-center justify-center rounded-full border border-[#e8ebef] text-[18px] text-[#9a9ea7]" onClick={onClose}>×</button>
-        <p className="mt-5 text-[14px] leading-7 text-[#53565e]">{item.detail}</p>
-      </section>
-    </div>
-  );
-}
-
-// 渲染全部公告或引导条目。
-function InformationListModal({ title, items, onDetail, onClose }: { title: string; items: InformationItem[]; onDetail: (item: InformationItem) => void; onClose: () => void }) {
-  return (
-    <div className="absolute inset-0 z-30 bg-[#171719]/30" onClick={onClose}>
-      <section className="figma-shadow absolute left-[476px] top-[156px] h-[508px] w-[584px] rounded-[22px] border border-[#e8ebef] bg-white p-7" onClick={(event) => event.stopPropagation()}>
-        <h2 className="ml-2 text-[22px] font-bold">{title}</h2>
-        <button type="button" className="absolute right-6 top-6 flex h-7 w-7 items-center justify-center rounded-full border border-[#e8ebef] text-[18px] text-[#9a9ea7]" onClick={onClose}>×</button>
-        <div className="information-list-scroll absolute bottom-7 left-7 right-7 top-[86px] overflow-y-auto pr-2">
-          {items.map((item) => (
-            <button type="button" className="flex h-[52px] w-full items-center rounded-[10px] border-b border-[#eef0f3] px-2 text-left hover:bg-[#f4f6f8]" onClick={() => onDetail(item)} key={item.title}>
-              <span className="information-row-text max-w-[420px] truncate">{item.title}</span>
-              <span className="detail-link-text ml-auto">查看详情</span>
-            </button>
-          ))}
-        </div>
-      </section>
-    </div>
   );
 }
 
@@ -306,6 +279,11 @@ function ProjectsDashboard({ go }: PageProps) {
   return <DashboardLayout go={go} />;
 }
 
+// 根据真实原因区分项目重名和任务书上传失败。
+function taskbookErrorTitle(message: string) {
+  return message === DUPLICATE_PROJECT_NAME_MESSAGE ? "项目名称已被使用" : "任务书上传失败";
+}
+
 // 渲染项目信息表单。
 export function ProjectInfoPage({ go }: PageProps) {
   useRememberFlowRoute("info");
@@ -377,7 +355,7 @@ export function ProjectInfoPage({ go }: PageProps) {
         await deleteTaskbook(deleteTarget.id);
         setDeleteTarget(null);
       }} />}
-      {error && <FlowErrorCard title="项目名称已被使用" message={error} onClose={() => setError("")} />}
+      {error && <FlowErrorCard title={taskbookErrorTitle(error)} message={error} onClose={() => setError("")} />}
     </FlowShell>
   );
 }
@@ -418,7 +396,11 @@ function FileRow({ name, meta, status, editing, onDelete }: { name: string; meta
   return (
     <div className="relative h-[77px] w-[210px] shrink-0 rounded-[12px] border border-[#e8ebef] bg-[#fafbfc] px-3 py-3 text-[12px]">
       {editing && <button type="button" aria-label="删除附件" className="absolute -right-3 -top-3 flex h-7 w-7 items-center justify-center rounded-full border border-[#d9dde3] bg-white text-[18px] font-bold leading-none text-[#171719] hover:bg-[#eef0f4]" onClick={onDelete}>×</button>}
-      <b className="block">{name} <span className={`float-right rounded-full px-2 py-1 text-[10px] ${ready ? "bg-[#e6f8ed] text-[#22c55e]" : "bg-[#fff0ee] text-[#d94b3d]"}`}>{status}</span></b><span className="mt-1 block text-[#9a9ea7]">{meta}</span>
+      <div className="flex min-w-0 items-start gap-2">
+        <b className="min-w-0 flex-1 truncate leading-5" title={name}>{name}</b>
+        <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] ${ready ? "bg-[#e6f8ed] text-[#22c55e]" : "bg-[#fff0ee] text-[#d94b3d]"}`}>{status}</span>
+      </div>
+      <span className="mt-1 line-clamp-2 overflow-hidden leading-[18px] text-[#9a9ea7]" title={meta}>{meta}</span>
     </div>
   );
 }
@@ -438,17 +420,16 @@ export function TaskbookDeleteCard({ fileName, onClose, onConfirm }: { fileName:
   };
 
   return (
-    <>
-      <div className="absolute inset-0 z-[70] bg-[#171719]/30" onClick={onClose} />
-      <section className="figma-shadow font-chat absolute left-[472px] top-[270px] z-[80] h-[238px] w-[592px] rounded-[20px] border border-[#d9dde3] bg-white p-7">
-        <h2 className="text-[24px] font-bold leading-8">删除文件</h2>
-        <p className="mt-6 text-[16px] leading-6 text-[#171719]">确定删除“{fileName}”吗？删除后需要重新上传。</p>
-        <div className="absolute bottom-6 right-7 flex gap-4">
-          <button type="button" disabled={submitting} className="app-action-button h-10 w-[82px] rounded-[12px] border border-[#d9dde3] bg-white text-[#171719] disabled:opacity-60" onClick={onClose}>取消</button>
-          <button type="button" disabled={submitting} className="app-action-button h-10 w-[112px] rounded-[12px] bg-[#171719] text-white disabled:opacity-60" onClick={() => void confirm()}>{submitting ? "删除中" : "确认删除"}</button>
+    <AppPromptOverlay onClose={onClose}>
+      <section className="app-prompt-card figma-shadow" onClick={(event) => event.stopPropagation()}>
+        <h2 className="app-prompt-title">删除文件</h2>
+        <p className="app-prompt-copy">确定删除“{fileName}”吗？删除后需要重新上传。</p>
+        <div className="app-prompt-actions">
+          <button type="button" disabled={submitting} className="app-action-button h-9 rounded-[10px] border border-[#d9dde3] bg-white px-5 text-[#171719] disabled:opacity-60" onClick={onClose}>取消</button>
+          <button type="button" disabled={submitting} className="app-action-button h-9 rounded-[10px] bg-[#171719] px-5 text-white disabled:opacity-60" onClick={() => void confirm()}>{submitting ? "删除中" : "确认删除"}</button>
         </div>
       </section>
-    </>
+    </AppPromptOverlay>
   );
 }
 

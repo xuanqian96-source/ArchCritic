@@ -17,6 +17,7 @@ from app.llm.client import get_llm_client
 from app.llm.dashscope_files import DashScopeFileClient, DashScopeUploadError
 from app.models import AgentEvaluation, DrawingFile, OverallReport, Project, Submission, User
 from app.services.auth import get_current_user, require_owned_submission
+from app.services.drawing_preprocess import add_preprocessed_model_drawings
 from app.services.uploads import resolve_local_upload
 from app.routers.submission_common import CANCELLED_SUBMISSIONS, EvaluationCancelled, REAL_LLM_PROVIDERS, ensure_evaluation_active, resolve_llm_model, resolve_llm_provider
 from app.routers.submission_crud import refresh_submission_attachments
@@ -96,11 +97,6 @@ def stream_evaluation_events(
         if llm_provider == "dashscope":
             yield sse_event("status", {"message": "正在上传模型可读取的图纸 URL。"})
             ensure_dashscope_model_file_urls(db, list(submission.drawing_files), llm_model)
-            yield sse_event("stage", {
-                "stage_id": "model_input",
-                "status": "done",
-                "message": "模型图纸 URL 已准备完成。",
-            })
         elif llm_provider not in REAL_LLM_PROVIDERS:
             yield sse_event("stage", {
                 "stage_id": "model_input",
@@ -141,19 +137,23 @@ def stream_evaluation_events(
             })
             yield sse_event("final", {"report": full_report.model_dump(mode="json")})
             return
-        else:
-            yield sse_event("stage", {
-                "stage_id": "model_input",
-                "status": "done",
-                "message": "模型图文输入已准备完成。",
-            })
-
         payload = build_function_agent_context(
             submission,
             list(submission.drawing_files),
             references,
             list(submission.attachments),
         )
+        yield sse_event("status", {"message": "正在识别合成图中的独立图纸区域。"})
+        derived_count = add_preprocessed_model_drawings(payload, llm_provider, llm_model)
+        yield sse_event("stage", {
+            "stage_id": "model_input",
+            "status": "done",
+            "message": (
+                f"模型输入已准备完成，并补充 {derived_count} 张自动拆分图。"
+                if derived_count
+                else "模型图文输入已准备完成。"
+            ),
+        })
         if is_multi_agent_stage(submission.design_stage):
             yield sse_event("status", {"message": f"正在调用 {llm_model} 按当前阶段顺序评审。"})
             llm_client = get_llm_client(llm_provider, llm_model)
@@ -296,8 +296,7 @@ def stream_function_agent_events(
         "stream": True,
         "extra_body": llm_client.extra_body,
     }
-    if llm_provider != "gemini":
-        create_kwargs["stream_options"] = {"include_usage": True}
+    create_kwargs["stream_options"] = {"include_usage": True}
     if llm_client.reasoning_effort:
         create_kwargs["reasoning_effort"] = llm_client.reasoning_effort
 

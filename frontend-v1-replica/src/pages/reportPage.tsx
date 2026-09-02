@@ -1,15 +1,15 @@
 // 评图报告页：展示本次真实评分、任务书权重、图纸资料和继续追问。
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import type { PageProps } from "../App";
-import { Button, Card, PageTitle, Sidebar, ZoomableImageStage } from "../components";
+import { AppPromptOverlay, Button, Card, PageTitle, Sidebar, ZoomableImageStage } from "../components";
 import { apiUrl } from "../api/client";
 import { getCachedProjectGroups, loadProjectGroups, type ProjectGroup } from "../state/projectGroups";
-import { useProfile } from "../state/profile";
 import { useWorkspace } from "../state/workspace";
-import type { AgentEvaluation, Attachment, DrawingFile, KnowledgeReference, OverallReport, Project, Submission, SubmissionHistory } from "../types/api";
+import type { Attachment, DrawingFile, OverallReport, Project, Submission, SubmissionHistory } from "../types/api";
 import { getCachedGroupHistory, getCurrentReportVersionLabel, loadProjectGroupHistory } from "./reportHistoryData";
-import { buildChatSuggestions, buildDrilldownDimensions, buildReportIssues, buildSchemeDimensions, DimensionSummaryText, displayDrawingName, drawingTypeLabel, findReviewEvaluation, getDimensionPanelRadius, getReportAgentLabel, getReportEvaluationSnapshot, getReportModelLabel, getReportScoreGradeForMax, hasSubScores, isImageDrawing, IssueOverlay, type ReportIssue, ReportOverlay, renderChatText, ScoreRing, splitReadableParagraphs, TraceRow } from "./reportShared";
+import { ReportAssistant } from "./reportAssistant";
+import { buildReportIssues, buildReportSubScores, buildSchemeDimensions, DimensionSummaryText, displayDrawingName, drawingTypeLabel, findReviewEvaluation, getDimensionPanelRadius, getIssueTone, getReferenceDisplay, getReportAgentLabel, getReportEvaluationSnapshot, getReportModelLabel, getReportScoreGradeForMax, isImageDrawing, IssueOverlay, type ReportIssue, ScoreRing, splitReadableParagraphs } from "./reportShared";
 
 export function ReportPage(props: PageProps) {
   const { report } = useWorkspace();
@@ -22,11 +22,8 @@ function ReportUnavailablePage({ go, invalid = false }: PageProps & { invalid?: 
 }
 
 function ReportContent({ go }: PageProps) {
-  const { attachments, chatMessages, downloadCurrentReport, draft, drawings, history, project, projects, report, sendQuestion, submission } = useWorkspace();
+  const { attachments, chatMessages, downloadCurrentReport, draft, drawings, history, project, projects, refreshChatMessages, report, sendQuestion, submission } = useWorkspace();
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [drilldownSource, setDrilldownSource] = useState<AgentEvaluation | null>(null);
-  const [drilldownSourceIndex, setDrilldownSourceIndex] = useState<number | null>(null);
-  const [detailOpen, setDetailOpen] = useState(false);
   const [selectedIssue, setSelectedIssue] = useState<ReportIssue | null>(null);
   const [projectInfoOpen, setProjectInfoOpen] = useState(false);
   const [historyNoticeOpen, setHistoryNoticeOpen] = useState(false);
@@ -35,37 +32,33 @@ function ReportContent({ go }: PageProps) {
   const [projectGroups, setProjectGroups] = useState<ProjectGroup[]>(() => getCachedProjectGroups(projects));
   const reviewEvaluation = useMemo(() => findReviewEvaluation(report?.agent_evaluations ?? []), [report]);
   const schemeDimensions = useMemo(() => buildSchemeDimensions(report?.agent_evaluations ?? []), [report]);
-  const dimensions = drilldownSource ? buildDrilldownDimensions(drilldownSource) : schemeDimensions;
+  const dimensions = schemeDimensions;
   const activeIndex = Math.min(selectedIndex, dimensions.length - 1);
   const selected = dimensions[activeIndex];
-  const focusEvaluation = drilldownSource ?? null;
-  const scoreValue = Math.round(focusEvaluation?.score ?? report?.overall_score ?? 0);
-  const scoreLabel = focusEvaluation?.dimension ?? "综合评分";
-  const dimensionMaxScore = drilldownSource ? 25 : 100;
-  const selectedScoreGrade = getReportScoreGradeForMax(selected.score, dimensionMaxScore);
-  const summaryTitle = focusEvaluation ? `${focusEvaluation.dimension}评价` : "综合评审结果";
-  const summaryText = focusEvaluation?.summary ?? reviewEvaluation?.summary ?? report?.summary ?? "当前报告没有返回整体评价。";
+  const scoreValue = Math.round(report?.overall_score ?? 0);
+  const selectedScoreGrade = getReportScoreGradeForMax(selected.score, 100);
+  const summaryText = reviewEvaluation?.summary ?? report?.summary ?? "当前报告没有返回整体评价。";
   const reportProjectName = project?.name || draft.name;
   const reportVersionName = getCurrentReportVersionLabel(submission, history, projectGroups);
   const issues = useMemo(() => {
     const reportIssues = buildReportIssues(report);
     return reportIssues;
   }, [report]);
-  const openDimensionDetail = () => {
-    if (drilldownSource) {
-      setDrilldownSource(null);
-      setSelectedIndex(drilldownSourceIndex ?? 0);
-      setDrilldownSourceIndex(null);
-      return;
-    }
-    if (!drilldownSource && hasSubScores(selected)) {
-      setDrilldownSource(selected);
-      setDrilldownSourceIndex(activeIndex);
-      setSelectedIndex(0);
-      return;
-    }
-    setDetailOpen(true);
-  };
+  const pendingChatKey = chatMessages[chatMessages.length - 1]?.role === "user"
+    ? `${submission?.id ?? 0}:${chatMessages[chatMessages.length - 1]?.id ?? chatMessages.length}:${chatMessages[chatMessages.length - 1]?.content}`
+    : "";
+  useEffect(() => {
+    if (!submission || !pendingChatKey) return;
+    let active = true;
+    let timer = 0;
+    const refreshPendingAnswer = async () => {
+      const saved = await refreshChatMessages().catch(() => null);
+      if (!active || (saved && saved[saved.length - 1]?.role !== "user")) return;
+      timer = window.setTimeout(refreshPendingAnswer, 2000);
+    };
+    void refreshPendingAnswer();
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [pendingChatKey, refreshChatMessages, submission]);
   const openHistory = async () => {
     const cachedHistory = getCachedGroupHistory(project, history);
     const cachedScoredCount = cachedHistory.filter((item) => item.overall_score != null).length;
@@ -116,9 +109,9 @@ function ReportContent({ go }: PageProps) {
         <Button kind="purple" className="report-top-action-button w-[132px] rounded-[12px]" disabled={historyOpening} onClick={() => void openHistory()}>历史版本对比</Button>
       </div>
       <Card className="font-inter absolute left-[307px] top-[149px] h-[176px] w-[756px] rounded-[16px]">
-        <ScoreRing score={String(scoreValue)} label={scoreLabel} />
+        <ScoreRing score={String(scoreValue)} label="综合评分" />
         <div className="absolute left-[145px] top-[29px]">
-          <h2 className="text-[16px] font-bold leading-[22px]">{summaryTitle}</h2>
+          <h2 className="text-[16px] font-bold leading-[22px]">综合评审结果</h2>
           <div className="report-light-scroll mt-2 h-[82px] w-[590px] overflow-y-auto pr-5">
             <p className="text-[12px] leading-5 text-[#53565e]">{summaryText}</p>
           </div>
@@ -129,7 +122,7 @@ function ReportContent({ go }: PageProps) {
         <span className="absolute left-[98px] top-[17px] text-[11px] text-[#9a9ea7]">点击切换查看对应问题与建议</span>
         <div className="absolute left-[22px] top-[44px] z-10 grid w-[712px] gap-[8px]" style={{ gridTemplateColumns: `repeat(${Math.max(1, dimensions.length)}, minmax(0, 1fr))` }}>
           {dimensions.map((item, index) => {
-            const itemGrade = getReportScoreGradeForMax(item.score, dimensionMaxScore);
+            const itemGrade = getReportScoreGradeForMax(item.score, 100);
             const active = index === activeIndex;
             return (
               <button
@@ -150,17 +143,21 @@ function ReportContent({ go }: PageProps) {
         >
           <b className="absolute right-[25px] top-[22px] text-[48px] leading-[54px]">{Math.round(selected.score)}</b>
           <DimensionSummaryText selected={selected} />
-          <Button kind="white" className="report-top-action-button absolute bottom-4 right-4 h-[34px] w-[106px]" onClick={openDimensionDetail}>{drilldownSource ? "返回总评" : "查看详情"}</Button>
         </div>
-        <h3 className="absolute left-[22px] top-[252px] text-[16px] font-bold leading-[22px]">反馈要点</h3>
-        <div className="report-light-scroll absolute left-[22px] top-[281px] h-[147px] w-[712px] overflow-y-auto">
-          <div className="space-y-2">
-            {issues.map((issue, index) => <TraceRow key={`${issue.text}-${index}`} issue={issue} onClick={() => setSelectedIssue(issue)} />)}
-          </div>
+        <div className="absolute left-[22px] top-[252px] grid h-[176px] w-[712px] grid-cols-4">
+          {buildReportSubScores(selected).map((item) => (
+            <article className="report-sub-score-card" key={item.name}>
+              <span>{item.name}</span>
+              <b>{Math.round(item.score)}<small> / {Math.round(item.maxScore)}</small></b>
+              <div className="report-sub-score-copy report-hover-scroll">
+                {splitReadableParagraphs(item.reason).map((paragraph, index) => <p key={`${item.name}-${index}`}>{paragraph}</p>)}
+              </div>
+            </article>
+          ))}
         </div>
       </section>
-      <ChatPanel messages={chatMessages} report={report} sendQuestion={sendQuestion} />
-      {detailOpen && <ReportOverlay title={selected.dimension} subtitle="专项评图详情" onClose={() => setDetailOpen(false)} lines={[...selected.issues, ...selected.suggestions]} fallback={selected.summary} />}
+      <FeedbackPanel issues={issues} references={report?.references ?? []} onSelect={setSelectedIssue} />
+      {submission && <ReportAssistant submissionId={submission.id} messages={chatMessages} report={report} sendQuestion={sendQuestion} go={go} />}
       {selectedIssue && <IssueOverlay issue={selectedIssue} references={report?.references ?? []} onClose={() => setSelectedIssue(null)} />}
       {projectInfoOpen && <ReportProjectInfoModal attachments={attachments} draft={draft} drawings={drawings} modelLabel={getReportModelLabel(submission, draft)} project={project} report={report} submission={submission} onClose={() => setProjectInfoOpen(false)} />}
       {historyNoticeOpen && <HistoryUnavailableModal onClose={() => setHistoryNoticeOpen(false)} />}
@@ -168,17 +165,46 @@ function ReportContent({ go }: PageProps) {
   );
 }
 
+// 右侧固定展示报告反馈要点，报告追问改由悬浮助手承载。
+function FeedbackPanel({ issues, references, onSelect }: { issues: ReportIssue[]; references: OverallReport["references"]; onSelect: (issue: ReportIssue) => void }) {
+  return (
+    <section className="font-inter white-panel figma-shadow absolute left-[1089px] top-[149px] h-[658px] w-[424px] overflow-hidden rounded-[22px] px-[22px] py-[20px]">
+      <h2 className="text-[18px] font-bold">反馈要点</h2>
+      <p className="mt-1 text-[11px] leading-5 text-[#9a9ea7]">按优先级查看本次报告中的问题、建议与优势</p>
+      <div className="report-light-scroll absolute bottom-[22px] left-[22px] right-[14px] top-[76px] overflow-y-auto pr-2">
+        <div className="space-y-2">
+          {issues.map((issue, index) => {
+            const tone = getIssueTone(issue.level);
+            return (
+              <button type="button" className="report-feedback-card" onClick={() => onSelect(issue)} key={`${issue.text}-${index}`}>
+                <span className={`report-feedback-badge ${tone.badge}`}>{issue.label}</span>
+                <b>{issue.summary}</b>
+                <span className="report-feedback-meta">
+                  {issue.referenceIds.length > 0 && <span className="report-feedback-references">{issue.referenceIds.map((referenceId) => {
+                    const display = getReferenceDisplay(referenceId, references);
+                    return <i title={`${display.fullId} · ${display.title}`} key={referenceId}>[{display.label}]</i>;
+                  })}</span>}
+                  <small>查看反馈详情</small>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 // 历史版本不足时，用明确提示替代空白等待。
 function HistoryUnavailableModal({ onClose }: { onClose: () => void }) {
-  return createPortal(
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-[#171719]/30" onClick={onClose}>
-      <section className="figma-shadow font-chat relative h-[238px] w-[592px] rounded-[20px] border border-[#d9dde3] bg-white p-7" onClick={(event) => event.stopPropagation()}>
-        <h2 className="text-[24px] font-bold leading-8 text-[#171719]">暂时没有历史版本对比</h2>
-        <p className="mt-6 text-[16px] leading-6 text-[#171719]">这个项目目前只有一份已评分报告。等完成第二次评图后，就可以查看分数变化和版本差异。</p>
-        <button type="button" className="app-action-button absolute bottom-6 right-7 h-10 w-[96px] rounded-[12px] bg-[#171719] text-white" onClick={onClose}>知道了</button>
+  return (
+    <AppPromptOverlay onClose={onClose}>
+      <section className="app-prompt-card figma-shadow relative" onClick={(event) => event.stopPropagation()}>
+        <h2 className="app-prompt-title">暂时没有历史版本对比</h2>
+        <p className="app-prompt-copy">这个项目目前只有一份已评分报告。等完成第二次评图后，就可以查看分数变化和版本差异。</p>
+        <div className="app-prompt-actions"><button type="button" className="app-action-button h-9 rounded-[10px] bg-[#171719] px-5 text-white" onClick={onClose}>知道了</button></div>
       </section>
-    </div>,
-    document.body,
+    </AppPromptOverlay>
   );
 }
 
@@ -286,116 +312,5 @@ function ReportProjectInfoModal({
       )}
     </div>,
     document.body,
-  );
-}
-
-// 渲染报告右侧继续对话区。
-function ChatPanel({ messages, report, sendQuestion }: { messages: { role: "user" | "assistant"; content: string }[]; report: OverallReport | null; sendQuestion: (content: string) => Promise<void> }) {
-  const { draft, setDraftField } = useWorkspace();
-  const { profile } = useProfile();
-  const [question, setQuestion] = useState("");
-  const [sending, setSending] = useState(false);
-  const [sendError, setSendError] = useState("");
-  const [modelOpen, setModelOpen] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const openingMessage = "报告已生成。我可以继续解释扣分原因、定位图纸问题，或生成下一轮优化动作。";
-  const displayMessages = [{ role: "assistant" as const, content: openingMessage }, ...messages];
-  const suggestions = useMemo(() => buildChatSuggestions(report), [report]);
-  const modelValue = draft.modelProvider === "gemini" ? "gemini|gemini-2.5-flash" : "dashscope|qwen3.6-plus";
-  const modelLabel = draft.modelProvider === "gemini" ? "gemini-2.5-flash" : "qwen3.6-plus";
-  useEffect(() => {
-    const node = scrollRef.current;
-    if (node) node.scrollTop = node.scrollHeight;
-  }, [messages, sending]);
-  useEffect(() => {
-    if (!modelOpen) return;
-    const close = (event: PointerEvent) => {
-      const target = event.target as HTMLElement;
-      if (target.closest("[data-chat-model-menu]")) return;
-      setModelOpen(false);
-    };
-    document.addEventListener("pointerdown", close);
-    return () => document.removeEventListener("pointerdown", close);
-  }, [modelOpen]);
-  const changeModel = (value: string) => {
-    const [provider, model] = value.split("|");
-    setDraftField("modelProvider", provider);
-    setDraftField("modelName", model);
-    setDraftField("modelLabel", model);
-    setModelOpen(false);
-  };
-  const submit = async (content = question) => {
-    if (!content.trim()) return;
-    setSending(true);
-    setSendError("");
-    setQuestion("");
-    try {
-      await sendQuestion(content);
-    } catch {
-      setSendError("发送失败，请确认后端服务和当前报告状态。");
-    } finally {
-      setSending(false);
-    }
-  };
-  const handleInputKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.nativeEvent.isComposing || event.key !== "Enter" || event.shiftKey) return;
-    event.preventDefault();
-    void submit();
-  };
-  return (
-    <section className="font-inter white-panel figma-shadow absolute left-[1089px] top-[149px] h-[658px] w-[424px] overflow-hidden rounded-[22px] px-[22px] py-[20px]">
-      <h2 className="text-[18px] font-bold">继续与系统对话</h2>
-      <div ref={scrollRef} className="report-chat-scroll absolute left-[22px] right-[22px] top-[70px] bottom-[182px] overflow-y-auto pr-2">
-        <div className="space-y-3">
-          {displayMessages.map((message, index) => message.role === "user" ? (
-            <div className="flex justify-end gap-2" key={`${message.role}-${index}-${message.content}`}>
-              <p className="max-w-[286px] whitespace-pre-wrap rounded-[12px] border border-[#e8ebef] bg-[#f4f6f8] px-3 py-3 text-[12px] leading-5 text-[#171719]">{renderChatText(message.content)}</p>
-              {profile.avatarDataUrl ? <img className="h-9 w-9 rounded-full object-cover" src={profile.avatarDataUrl} /> : <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#171719] text-[12px] font-bold text-white">我</span>}
-            </div>
-          ) : (
-            <div className="flex gap-2" key={`${message.role}-${index}-${message.content}`}>
-              <img className="h-9 w-9 rounded-full object-cover" src="/assets/v1/头像.png" />
-              <p className="max-w-[286px] whitespace-pre-wrap rounded-[12px] border border-[#e8ebef] bg-white px-3 py-3 text-[12px] leading-5 text-[#171719]">{renderChatText(message.content)}</p>
-            </div>
-          ))}
-        </div>
-        {!messages.length && <div className="mt-4">
-          <p className="text-[12px] text-[#171719]">你可以继续追问</p>
-          <div className="mt-2 grid grid-cols-3 gap-2 text-[11px]">
-            {suggestions.map((item) => (
-              <button type="button" title={item} disabled={sending} className="h-9 min-w-0 truncate rounded-[10px] border border-[#e8ebef] px-2 text-left hover:bg-[#f4f6f8] disabled:opacity-60" onClick={() => setQuestion(item)} key={item}>{item}</button>
-            ))}
-          </div>
-        </div>}
-        <span className="mt-1 block h-4 text-[11px] text-[#9a9ea7]">{sending ? "正在调用系统回答..." : sendError}</span>
-      </div>
-      <div className="absolute bottom-6 left-[22px] h-[126px] w-[380px] rounded-[14px] border border-[#e8ebef] bg-[#fafbfc] text-[12px] text-[#9a9ea7]">
-        <textarea value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={handleInputKeyDown} placeholder="输入你想继续追问的问题..." className="report-chat-scroll absolute left-3 right-2 top-2 h-[62px] resize-none overflow-y-auto bg-transparent pr-2 text-[#171719] outline-none placeholder:text-[#9a9ea7]" />
-        <div className="absolute bottom-2 left-2" data-chat-model-menu>
-          {modelOpen && (
-            <div className="figma-shadow absolute bottom-[34px] left-0 z-20 w-[280px] overflow-hidden rounded-[12px] border border-[#e8ebef] bg-white p-1">
-              {[
-                { value: "dashscope|qwen3.6-plus", label: "qwen3.6-plus" },
-                { value: "gemini|gemini-2.5-flash", label: "gemini-2.5-flash" },
-              ].map((option) => (
-                <button
-                  type="button"
-                  key={option.value}
-                  onClick={() => changeModel(option.value)}
-                  className={`flex h-9 w-full items-center justify-between rounded-[9px] px-3 text-left text-[12px] font-bold ${modelValue === option.value ? "bg-[#efe9ff] text-[#6c4dff]" : "text-[#171719] hover:bg-[#f4f6f8]"}`}
-                >
-                  {option.label}
-                  {modelValue === option.value && <span>✓</span>}
-                </button>
-              ))}
-            </div>
-          )}
-          <button type="button" onClick={() => setModelOpen((current) => !current)} className="h-[27px] w-[280px] rounded-[8px] border border-[#e8ebef] bg-white px-3 py-1.5 text-left">
-            <span className="text-[#9a9ea7]">模型</span><b className="ml-4 text-[#171719]">{modelLabel}</b><span className={`report-model-arrow ${modelOpen ? "rotate-right" : ""}`} />
-          </button>
-        </div>
-        <Button className="report-chat-send-button absolute bottom-2 right-2 h-[27px] w-[55px] text-[12px]" disabled={sending} onClick={() => void submit()}>{sending ? <span className="flex h-[27px] items-center justify-center text-[15px] leading-[0]">...</span> : "发送"}</Button>
-      </div>
-    </section>
   );
 }

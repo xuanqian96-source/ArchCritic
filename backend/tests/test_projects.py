@@ -26,6 +26,7 @@ async def test_create_and_list_projects():
         )
         project_id = create_response.json()["id"]
         list_response = await client.get("/api/projects")
+        overview_response = await client.get("/api/projects/overview")
         history_response = await client.get(f"/api/projects/{project_id}/history")
 
     assert create_response.status_code == 201
@@ -39,6 +40,8 @@ async def test_create_and_list_projects():
     projects = list_response.json()
     assert len(projects) == 1
     assert projects[0]["id"] == created_project["id"]
+    assert overview_response.status_code == 200
+    assert overview_response.json()[0]["project"]["id"] == created_project["id"]
 
     assert history_response.status_code == 200
     assert history_response.json() == []

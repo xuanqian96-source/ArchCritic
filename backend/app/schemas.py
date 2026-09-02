@@ -1,6 +1,7 @@
 """定义接口收发的数据结构，供路由和前端联调用。"""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -8,16 +9,20 @@ from pydantic import BaseModel, Field
 class AuthRegister(BaseModel):
     """本地注册时使用的数据结构。"""
 
-    username: str = Field(..., min_length=3, max_length=50, pattern=r"^[A-Za-z0-9_.-]+$")
+    username: str = Field(..., min_length=3, max_length=12, pattern=r"^[A-Za-z0-9]+$")
     password: str = Field(..., min_length=8, max_length=128)
-    display_name: str = Field(..., min_length=1, max_length=100)
+    display_name: str = Field(..., min_length=1, max_length=12)
+
+    model_config = {"str_strip_whitespace": True}
 
 
 class AuthLogin(BaseModel):
     """本地登录时使用的数据结构。"""
 
-    username: str = Field(..., min_length=1, max_length=50)
+    username: str = Field(..., min_length=3, max_length=12, pattern=r"^[A-Za-z0-9]+$")
     password: str = Field(..., min_length=1, max_length=128)
+
+    model_config = {"str_strip_whitespace": True}
 
 
 class AuthUserRead(BaseModel):
@@ -29,10 +34,18 @@ class AuthUserRead(BaseModel):
     role: str
 
 
-class AuthProfileUpdate(BaseModel):
-    """修改本地账户显示名称。"""
+class AuthAccountAvailabilityRead(BaseModel):
+    """返回账号是否可以注册。"""
 
-    display_name: str = Field(..., min_length=1, max_length=100)
+    available: bool
+
+
+class AuthProfileUpdate(BaseModel):
+    """修改本地账户昵称。"""
+
+    display_name: str = Field(..., min_length=1, max_length=12)
+
+    model_config = {"str_strip_whitespace": True}
 
 
 class AuthPasswordUpdate(BaseModel):
@@ -40,6 +53,24 @@ class AuthPasswordUpdate(BaseModel):
 
     current_password: str = Field(..., min_length=1, max_length=128)
     new_password: str = Field(..., min_length=8, max_length=128)
+
+
+class FeedbackCreate(BaseModel):
+    """用户提交问题反馈时使用的数据结构。"""
+
+    content: str = Field(..., min_length=5, max_length=2000)
+
+    model_config = {"str_strip_whitespace": True}
+
+
+class FeedbackRead(BaseModel):
+    """返回反馈保存结果。"""
+
+    id: int
+    status: str
+    created_at: datetime | None = None
+
+    model_config = {"from_attributes": True}
 
 
 class ProjectCreate(BaseModel):
@@ -176,8 +207,14 @@ class ChatMessageCreate(BaseModel):
     """提交报告追问时使用的数据结构。"""
 
     content: str = Field(..., min_length=1, max_length=1000)
-    model_provider: str | None = Field(default=None, max_length=50)
-    model_name: str | None = Field(default=None, max_length=100)
+    tool: Literal["none", "drawing_review", "issue_explanation", "knowledge_recommendation"] = "none"
+
+
+class ChatCitationRead(BaseModel):
+    """报告助手回答下方的一张可点击知识卡或案例卡。"""
+
+    id: str
+    title: str
 
 
 class ChatMessageRead(BaseModel):
@@ -186,6 +223,10 @@ class ChatMessageRead(BaseModel):
     id: int
     role: str
     content: str
+    tool: str = "none"
+    citations: list[ChatCitationRead] = Field(default_factory=list)
+    report_updated: bool = False
+    updated_report: "OverallReportRead | None" = None
     created_at: datetime | None = None
 
     model_config = {"from_attributes": True}
@@ -195,6 +236,7 @@ class KnowledgeReferenceRead(BaseModel):
     """返回知识库依据时使用的数据结构。"""
 
     reference_id: str = ""
+    library_item_id: str = ""
     title: str
     source_type: str
     excerpt: str
@@ -258,6 +300,26 @@ class SubmissionHistoryRead(BaseModel):
     must_fix: list[str] = Field(default_factory=list)
     strengths: list[str] = Field(default_factory=list)
     dimension_scores: dict[str, float] = Field(default_factory=dict)
+
+
+class ProjectOverviewRead(BaseModel):
+    """返回项目列表所需的轻量版本摘要，避免前端逐项目重复请求。"""
+
+    project: ProjectRead
+    submissions: list[SubmissionRead] = Field(default_factory=list)
+    history: list[SubmissionHistoryRead] = Field(default_factory=list)
+
+
+class SubmissionWorkspaceRead(BaseModel):
+    """一次返回进入工作台所需的数据，减少页面切换时的请求轮次。"""
+
+    project: ProjectRead
+    submission: SubmissionRead
+    drawings: list[DrawingFileRead] = Field(default_factory=list)
+    attachments: list[AttachmentRead] = Field(default_factory=list)
+    history: list[SubmissionHistoryRead] = Field(default_factory=list)
+    report: OverallReportRead | None = None
+    chat_messages: list[ChatMessageRead] = Field(default_factory=list)
 
 
 class EvaluationRequest(BaseModel):

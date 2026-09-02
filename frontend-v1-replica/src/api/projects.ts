@@ -1,12 +1,17 @@
 // 项目接口：负责创建、读取、更新、继承和历史列表。
 import { requestJson } from "./client";
-import type { Project, Submission, SubmissionHistory } from "../types/api";
+import type { Project, ProjectOverview, Submission, SubmissionHistory } from "../types/api";
 
 export type ProjectPayload = Omit<Project, "id" | "created_at">;
 
 // 获取全部项目。
 export function listProjects(): Promise<Project[]> {
   return requestJson("/api/projects");
+}
+
+// 一次获取全部项目的轻量版本摘要。
+export function getProjectOverview(): Promise<ProjectOverview[]> {
+  return requestJson("/api/projects/overview");
 }
 
 // 创建项目。

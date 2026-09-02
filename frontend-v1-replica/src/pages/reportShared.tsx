@@ -5,6 +5,7 @@ import { apiUrl } from "../api/client";
 import { ZoomableImageStage } from "../components";
 import { useWorkspace } from "../state/workspace";
 import type { AgentEvaluation, DrawingFile, FeedbackItem, KnowledgeImage, KnowledgeReference, OverallReport, Submission } from "../types/api";
+import { ReportKnowledgeContent, useReportKnowledgeDetail } from "./reportKnowledgeCard";
 
 export const schemeDimensionSpecs = [
   { agent: "function_agent", label: "功能与流线", aliases: ["功能与流线"] },
@@ -95,20 +96,12 @@ export function findReference(references: KnowledgeReference[], referenceId: str
   return references.find((item) => item.reference_id.toUpperCase() === referenceId.toUpperCase()) ?? null;
 }
 
-// 把 Markdown 知识卡片转成适合弹窗阅读的短段落。
-export function formatKnowledgeLines(reference: KnowledgeReference) {
-  const raw = reference.display_content || reference.excerpt || reference.content || "当前知识卡片暂无详细内容。";
-  return raw
-    .split(/\n+/)
-    .map((line) => line
-      .replace(/^#{1,6}\s*/, "")
-      .replace(/^\s*[-*]\s*/, "")
-      .replace(/\*\*/g, "")
-      .replace(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g, "$1")
-      .replace(/!\[\[[^\]]+\]\]/g, "")
-      .trim())
-    .filter(Boolean)
-    .slice(0, 14);
+// 优先展示知识库真实编号；长编号仅在界面中省略中段，完整值保留在悬停提示中。
+export function getReferenceDisplay(referenceId: string, references: KnowledgeReference[]) {
+  const reference = findReference(references, referenceId);
+  const fullId = reference?.library_item_id?.trim() || referenceId.toUpperCase();
+  const label = fullId.length > 14 ? `${fullId.slice(0, 8)}…${fullId.slice(-4)}` : fullId;
+  return { fullId, label, title: reference?.title ?? "知识库依据" };
 }
 
 // 把模型回答中的 Markdown 加粗转换为真实粗体显示。
@@ -168,7 +161,7 @@ export function isImageDrawing(drawing: DrawingFile) {
 }
 
 export function getReportModelLabel(submission: Submission | null, draft: ReturnType<typeof useWorkspace>["draft"]) {
-  return submission?.selected_model_name || draft.modelLabel || draft.modelName || "qwen3.6-plus";
+  return submission?.selected_model_name || draft.modelLabel || draft.modelName || "qwen3.8-max";
 }
 
 export const reportAgentLabels: Record<string, string> = {
@@ -256,7 +249,7 @@ export function DimensionSummaryText({ selected }: { selected: AgentEvaluation }
     };
   }, [contentKey]);
   return (
-    <div ref={scrollRef} className={`absolute left-4 top-[20px] h-[104px] w-[520px] pr-4 ${scrollable ? "report-light-scroll overflow-y-auto" : "overflow-hidden"}`}>
+    <div ref={scrollRef} className={`report-hover-scroll report-hover-scroll-on-dark absolute left-4 top-[20px] h-[116px] w-[575px] pr-4 ${scrollable ? "overflow-y-auto" : "overflow-hidden"}`}>
       <div className="space-y-1 text-[12px] leading-5">
         {splitReadableParagraphs(selected.summary).map((paragraph, index) => <p key={`${selected.agent_type}-${index}`}>{paragraph}</p>)}
       </div>
@@ -292,6 +285,32 @@ export function buildDrilldownDimensions(evaluation: AgentEvaluation): AgentEval
     };
   }).filter((item) => normalizeMetricName(item.dimension) !== parentDimension);
   return subItems.length ? subItems : [evaluation];
+}
+
+export interface ReportSubScore {
+  name: string;
+  score: number;
+  maxScore: number;
+  reason: string;
+}
+
+// 提取当前评分维度的四个具体小分，保留各项真实满分与说明。
+export function buildReportSubScores(evaluation: AgentEvaluation): ReportSubScore[] {
+  const subScores = evaluation.details?.sub_scores;
+  if (!subScores || typeof subScores !== "object") {
+    return [{ name: evaluation.dimension, score: evaluation.score, maxScore: 100, reason: evaluation.summary }];
+  }
+  return Object.entries(subScores as Record<string, unknown>).slice(0, 4).map(([name, raw]) => {
+    const item = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+    const score = typeof raw === "number" ? raw : Number(item.score ?? 0);
+    const maxScore = Number(item.max_score ?? 25);
+    return {
+      name,
+      score: Number.isFinite(score) ? score : 0,
+      maxScore: Number.isFinite(maxScore) && maxScore > 0 ? maxScore : 25,
+      reason: String(item.reason ?? item.evidence ?? evaluation.summary),
+    };
+  });
 }
 
 // 渲染综合得分圆环。
@@ -366,32 +385,30 @@ export function IssueOverlay({ issue, references, onClose }: { issue: ReportIssu
   const [activeReferenceId, setActiveReferenceId] = useState<string | null>(null);
   const [activeImage, setActiveImage] = useState<KnowledgeImage | null>(null);
   const activeReference = activeReferenceId ? findReference(references, activeReferenceId) : null;
+  const knowledge = useReportKnowledgeDetail(activeReference);
+  const activeReferenceDisplay = activeReference ? getReferenceDisplay(activeReference.reference_id, references) : null;
   const tone = getIssueTone(issue.level);
   return createPortal(
     <div className="fixed inset-0 z-[90] flex items-center justify-center overflow-hidden bg-[#171719]/30" onClick={onClose}>
       {activeImage ? (
-        <ZoomableImageStage src={apiUrl(activeImage.url)} alt={activeImage.name ?? activeReference?.title ?? "案例图片"} onClose={() => setActiveImage(null)} />
+        <ZoomableImageStage src={apiUrl(activeImage.url)} alt={activeImage.name ?? knowledge.title} onClose={() => setActiveImage(null)} />
       ) : (
-      <section className="figma-shadow relative h-[530px] w-[612px] rounded-[22px] border border-[#e8ebef] bg-white p-7" onClick={(event) => event.stopPropagation()}>
+      <section className="figma-shadow relative h-[680px] max-h-[calc(100vh-40px)] w-[760px] max-w-[calc(100vw-40px)] rounded-[22px] border border-[#e8ebef] bg-white p-7" onClick={(event) => event.stopPropagation()}>
         {activeReference ? (
           <div className="flex h-full flex-col">
             <button type="button" className="issue-overlay-nav absolute right-7 top-8 text-[#6c4dff]" onClick={() => setActiveReferenceId(null)}>返回反馈详情</button>
             <p className="text-[13px] font-bold text-[#6c4dff]">知识库卡片</p>
-            <h2 className="mt-3 max-w-[430px] text-[24px] font-bold">{activeReference.title}</h2>
-            <div className="report-light-scroll mt-9 min-h-0 flex-1 overflow-y-auto pr-4">
-              <p className="text-[13px] font-bold text-[#9a9ea7]">{activeReference.reference_id} · {activeReference.source_type || "知识库"}</p>
-              <div className="mt-5 space-y-3 text-[14px] leading-7 text-[#53565e]">
-                {formatKnowledgeLines(activeReference).map((line, index) => <p key={`${activeReference.reference_id}-${index}`}>{line}</p>)}
-              </div>
-              {activeReference.image_urls?.length > 0 && (
-                <div className="mt-4 grid grid-cols-2 gap-3">
-                  {activeReference.image_urls.slice(0, 6).map((image) => (
-                    <button type="button" className="group overflow-hidden rounded-[12px] border border-[#e8ebef] bg-[#fafbfc] hover:bg-[#f4f6f8]" onClick={() => setActiveImage(image)} key={image.url}>
-                      <img className="h-28 w-full object-cover transition group-hover:scale-[1.02]" src={apiUrl(image.url)} alt={image.name ?? activeReference.title} />
-                    </button>
-                  ))}
+            <h2 className="mt-3 max-w-[570px] text-[24px] font-bold">{knowledge.title}</h2>
+            <div className="report-light-scroll mt-6 min-h-0 flex-1 overflow-y-auto pr-4">
+              <p className="text-[13px] font-bold text-[#9a9ea7]" title={activeReferenceDisplay?.fullId}>{knowledge.detail?.id || activeReferenceDisplay?.label} · {knowledge.detail?.kind_label || activeReference.source_type || "知识库"}</p>
+              {knowledge.loading && <p className="mt-6 text-[13px] text-[#9a9ea7]">正在读取完整知识卡内容…</p>}
+              {knowledge.error && <p className="mt-6 rounded-[12px] bg-[#fff4f4] px-4 py-3 text-[12px] leading-6 text-[#b44747]">{knowledge.error} 已暂时显示评图时保存的内容。</p>}
+              {!knowledge.loading && <>
+                {knowledge.excerpt && knowledge.excerpt.trim() !== knowledge.content.trim() && <p className="mt-4 rounded-[12px] bg-[#fafbfc] px-4 py-3 text-[14px] leading-7 text-[#53565e]">{knowledge.excerpt}</p>}
+                <div className="mt-5">
+                  <ReportKnowledgeContent content={knowledge.content} images={knowledge.images} onPreview={setActiveImage} />
                 </div>
-              )}
+              </>}
             </div>
           </div>
         ) : (
@@ -407,9 +424,10 @@ export function IssueOverlay({ issue, references, onClose }: { issue: ReportIssu
               <div className="report-light-scroll mt-3 h-[142px] space-y-2 overflow-y-auto pr-3">
                 {issue.referenceIds.length ? issue.referenceIds.map((referenceId) => {
                   const reference = findReference(references, referenceId);
+                  const display = getReferenceDisplay(referenceId, references);
                   return (
-                    <button type="button" className="knowledge-link-row grid min-h-[42px] w-full grid-cols-[52px_1fr_54px] items-center gap-3 rounded-[12px] border border-[#e8ebef] bg-white px-3 py-2 text-left hover:bg-[#f4f6f8]" onClick={() => setActiveReferenceId(referenceId)} key={referenceId}>
-                      <b className="knowledge-link-text text-[#6c4dff]">[{referenceId}]</b>
+                    <button type="button" className="knowledge-link-row grid min-h-[42px] w-full grid-cols-[100px_1fr_54px] items-center gap-3 rounded-[12px] border border-[#e8ebef] bg-white px-3 py-2 text-left hover:bg-[#f4f6f8]" onClick={() => setActiveReferenceId(referenceId)} key={referenceId}>
+                      <b className="knowledge-link-text truncate text-[#6c4dff]" title={display.fullId}>[{display.label}]</b>
                       <span className="knowledge-link-text truncate font-bold text-[#171719]">{reference?.title ?? "知识库依据"}</span>
                       <span className="knowledge-link-text justify-self-end font-bold text-[#6c4dff]">查看</span>
                     </button>

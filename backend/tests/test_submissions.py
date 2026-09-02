@@ -49,6 +49,7 @@ async def test_create_submission_and_generate_demo_report(monkeypatch):
             f"/api/submissions/{submission_id}/evaluate-demo"
         )
         report_response = await client.get(f"/api/submissions/{submission_id}/report")
+        workspace_response = await client.get(f"/api/submissions/{submission_id}/workspace")
 
     assert submission_response.status_code == 201
     created_submission = submission_response.json()
@@ -65,6 +66,8 @@ async def test_create_submission_and_generate_demo_report(monkeypatch):
 
     assert report_response.status_code == 200
     assert report_response.json()["submission_id"] == submission_id
+    assert workspace_response.status_code == 200
+    assert workspace_response.json()["report"]["submission_id"] == submission_id
     monkeypatch.delenv("LLM_PROVIDER", raising=False)
     get_settings.cache_clear()
 

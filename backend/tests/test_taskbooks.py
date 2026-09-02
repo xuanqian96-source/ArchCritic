@@ -1,6 +1,8 @@
 """验证任务书正文提取、阶段 Agent 和动态评分权重。"""
 
+from io import BytesIO
 from types import SimpleNamespace
+from zipfile import ZipFile
 
 from app.agents.scheme_review import build_scheme_overall_report, resolve_enabled_agent_order
 from app.services.taskbooks import (
@@ -26,6 +28,26 @@ def build_attachment(text: str):
         extracted_text=text,
         extraction_status="ready",
     )
+
+
+def build_docx_bytes(text: str) -> bytes:
+    """构造包含一段正文的最小 DOCX 字节。"""
+    output = BytesIO()
+    with ZipFile(output, "w") as archive:
+        archive.writestr(
+            "word/document.xml",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+            f"<w:body><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:body></w:document>",
+        )
+    return output.getvalue()
+
+
+def test_docx_task_book_text_can_be_extracted():
+    """确认当前运行环境可以直接读取 DOCX 正文。"""
+    text = "公共建筑课程设计任务书，重点关注功能组织、参观流线与场地关系。"
+
+    assert extract_task_book_text(build_docx_bytes(text), ".docx") == text
 
 
 def test_task_book_text_and_requirements_change_scheme_weights():

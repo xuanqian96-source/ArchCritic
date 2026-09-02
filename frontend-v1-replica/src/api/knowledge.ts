@@ -1,5 +1,5 @@
 // 知识库接口：只负责读取学习目录和卡片详情，页面可在后续前端改版时直接替换。
-import { requestJson } from "./client";
+import { apiUrl, requestJson } from "./client";
 
 export type KnowledgeKind = "knowledge" | "case";
 
@@ -31,10 +31,37 @@ export interface KnowledgeLibraryPayload {
   items: KnowledgeLibraryItem[];
   totals: { all: number; knowledge: number; case: number };
   levels: string[];
+  knowledge_categories: string[];
+  difficulties: string[];
   building_types: string[];
 }
 
-export type KnowledgeAssistantTool = "none" | "case_recommendation" | "knowledge_query" | "similar_cases" | "case_compare" | "learning_path" | "problem_breakdown" | "current_card_qa";
+export type KnowledgeAssistantTool = "none" | "case_recommendation" | "knowledge_query" | "learning_path" | "current_card_qa";
+
+export interface KnowledgeQuizQuestion {
+  id: string;
+  card_id: string;
+  card_title: string;
+  category: string;
+  difficulty: string;
+  difficulty_label: string;
+  prompt: string;
+  reference_points: string[];
+}
+
+export interface KnowledgeQuizPayload {
+  questions: KnowledgeQuizQuestion[];
+  categories: string[];
+  difficulties: string[];
+}
+
+export interface KnowledgeConversationSummary {
+  id: string;
+  title: string;
+  selected_tool: string;
+  message_count: number;
+  updated_at: string | null;
+}
 
 export interface KnowledgeRecommendation {
   id: string;
@@ -148,7 +175,55 @@ export function sendKnowledgeAssistantMessage(payload: KnowledgeAssistantRequest
   });
 }
 
+// 读取服务端事件流，在生成过程中持续交付正文，结束后返回完整推荐结果。
+export async function streamKnowledgeAssistantMessage(payload: KnowledgeAssistantRequest, onDelta: (text: string) => void, signal?: AbortSignal): Promise<KnowledgeAssistantResult> {
+  const response = await fetch(apiUrl("/api/knowledge/assistant/chat/stream"), {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal,
+  });
+  if (!response.ok || !response.body) {
+    const error = await response.json().catch(() => ({})) as { detail?: string };
+    throw new Error(error.detail ?? "AI 助手暂时无法回答，请稍后重试。");
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finalResult: KnowledgeAssistantResult | null = null;
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    const blocks = buffer.split("\n\n");
+    buffer = blocks.pop() ?? "";
+    for (const block of blocks) {
+      const event = block.match(/^event:\s*(.+)$/m)?.[1];
+      const rawData = block.match(/^data:\s*(.+)$/m)?.[1];
+      if (!event || !rawData) continue;
+      const data = JSON.parse(rawData) as unknown;
+      if (event === "delta" && typeof data === "string") onDelta(data);
+      if (event === "error") throw new Error(typeof data === "string" ? data : "AI 助手调用失败。");
+      if (event === "final") finalResult = data as KnowledgeAssistantResult;
+    }
+    if (done) break;
+  }
+  if (!finalResult) throw new Error("AI 返回内容不完整，请重试。");
+  return finalResult;
+}
+
 // 恢复当前账户已经保存的知识助手会话。
 export function getKnowledgeAssistantMessages(conversationId: string): Promise<KnowledgeAssistantMessage[]> {
   return requestJson<KnowledgeAssistantMessage[]>(`/api/knowledge/assistant/conversations/${encodeURIComponent(conversationId)}/messages`, { timeoutMs: 10_000 });
+}
+
+// 获取历史会话；搜索只作用于已有会话标题。
+export function getKnowledgeAssistantConversations(query = ""): Promise<KnowledgeConversationSummary[]> {
+  const suffix = query.trim() ? `?query=${encodeURIComponent(query.trim())}` : "";
+  return requestJson<KnowledgeConversationSummary[]>(`/api/knowledge/assistant/conversations${suffix}`, { timeoutMs: 10_000 });
+}
+
+// 读取由知识卡原有自测内容生成的开放式题库。
+export function getKnowledgeQuiz(): Promise<KnowledgeQuizPayload> {
+  return requestJson<KnowledgeQuizPayload>("/api/knowledge/quiz", { timeoutMs: 20_000 });
 }

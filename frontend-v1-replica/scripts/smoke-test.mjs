@@ -17,6 +17,7 @@ async function test() {
   await access(join(root, "index.html"));
   await access(join(root, "src", "main.tsx"));
   await access(join(root, "src", "styles.css"));
+  const appStyles = await readFile(join(root, "src", "styles.css"), "utf8");
   const app = await readFile(join(root, "src", "App.tsx"), "utf8");
   const flow = await Promise.all([
     "flowSetup.tsx",
@@ -28,6 +29,13 @@ async function test() {
     "reportPage.tsx",
     "historyPage.tsx",
   ].map((file) => readFile(join(root, "src", "pages", file), "utf8"))).then((parts) => parts.join("\n"));
+  const reportStyles = await readFile(join(root, "src", "styles", "report.css"), "utf8");
+  const reportAssistant = await readFile(join(root, "src", "pages", "reportAssistant.tsx"), "utf8");
+  const reportShared = await readFile(join(root, "src", "pages", "reportShared.tsx"), "utf8");
+  const reportKnowledgeCard = await readFile(join(root, "src", "pages", "reportKnowledgeCard.tsx"), "utf8");
+  const reportApi = await readFile(join(root, "src", "api", "reports.ts"), "utf8");
+  const baseComponents = await readFile(join(root, "src", "components", "baseComponents.tsx"), "utf8");
+  const helpComponents = await readFile(join(root, "src", "components", "helpComponents.tsx"), "utf8");
   const workspace = await readFile(join(root, "src", "state", "workspace.tsx"), "utf8");
   const knowledge = await readFile(join(root, "src", "pages", "knowledgePage.tsx"), "utf8");
   const knowledgeStyles = await readFile(join(root, "src", "styles", "knowledge.css"), "utf8");
@@ -41,8 +49,55 @@ async function test() {
   include(results, "历史版本对比", "历史版本页面缺失");
   include(workspace, "startEvaluation", "流式评图连接缺失");
   include(workspace, "uploadTaskbook", "任务书上传连接缺失");
+  include(flow, "taskbookErrorTitle(error)", "任务书上传错误仍被固定显示为项目重名");
+  include(flow, "line-clamp-2 overflow-hidden leading-[18px]", "任务书摘要没有限制在文件卡片内");
   include(workspace, "inheritProject", "项目继承连接缺失");
   include(workspace, "sendQuestion", "报告追问连接缺失");
+  include(reportAssistant, "图纸复核", "报告助手缺少图纸复核工具");
+  include(reportAssistant, "knowledge_recommendation", "报告助手缺少知识推荐工具");
+  include(reportAssistant, 'alt="AI 辅助助手"', "报告对话缺少助手头像");
+  include(reportAssistant, '{canPause ? "暂停" : "发送"}', "报告助手没有使用中文暂停按钮");
+  include(reportAssistant, "onPointerDown={startDrag}", "报告助手入口不支持拖动");
+  include(reportAssistant, "saveReportKnowledgeContext", "报告知识推荐没有携带整组推荐上下文");
+  include(reportAssistant, "syncReportQuestion", "报告助手输入框没有清理空行节点");
+  include(reportAssistant, "contentEditable suppressContentEditableWarning", "报告助手工作时仍禁止输入文字");
+  include(reportAssistant, "您的设计反馈助手", "报告助手标题没有明确设计反馈用途");
+  include(results, "FeedbackPanel", "报告右侧没有改为反馈要点面板");
+  include(results, "buildReportSubScores(selected)", "评分维度缺少四项具体小分");
+  if (results.includes(">具体小分<")) throw new Error("评分维度仍显示多余的具体小分标题");
+  include(results, 'top-[252px] grid h-[176px]', "下方小分说明区域没有使用标题释放后的高度");
+  include(results, 'className="report-sub-score-copy report-hover-scroll"', "小分说明不支持区域内滚动");
+  include(results, "splitReadableParagraphs(item.reason)", "小分说明没有按自然段改善可读性");
+  if (results.includes("pr-2 pb-16")) throw new Error("反馈要点列表底部仍保留多余空白");
+  include(reportShared, "report-hover-scroll-on-dark", "评分维度摘要没有使用悬停滚动条");
+  include(results, "getReferenceDisplay(referenceId, references)", "反馈要点没有优先显示知识库真实编号");
+  include(reportShared, "MAX_REFERENCE_LINKS = 3", "旧报告自动补充知识关联的三条上限被意外改变");
+  include(reportShared, "ReportKnowledgeContent", "报告关联知识卡没有展示完整正文");
+  include(reportKnowledgeCard, "getKnowledgeDetail(itemId)", "报告关联知识卡没有读取知识库完整详情");
+  include(reportKnowledgeCard, "detail?.content", "报告关联知识卡仍优先使用摘要快照");
+  if (reportShared.includes(">在知识库查看<")) throw new Error("报告知识卡仍保留二次跳转按钮");
+  if (reportShared.includes(".slice(0, 14)") || reportShared.includes("image_urls.slice(0, 6)")) throw new Error("报告知识卡正文或图片仍被缩略截断");
+  include(reportApi, "report/export?format=pdf", "下载报告按钮没有请求真实 PDF");
+  include(reportApi, "/chat/stream", "报告助手没有使用流式回答接口");
+  include(workspace, "streamChat(submissionId", "工作区没有持续接收报告回答流");
+  include(knowledge, "返回报告界面", "报告推荐知识页缺少返回报告入口");
+  include(knowledge, 'backLabel={assistantResult ? "返回推荐总览"', "推荐卡详情没有返回推荐总览");
+  include(knowledge, "hideEmpty={Boolean(assistantResult)}", "推荐结果仍会显示数量为零的类型");
+  include(knowledge, "assistantResult ? undefined : onQuiz", "推荐结果仍显示知识测试入口");
+  include(knowledge, "<ReportAssistant", "报告推荐知识页没有保留原报告助手");
+  include(baseComponents, 'className="fixed inset-0 z-[1000]', "通用提示卡遮罩没有覆盖完整视口");
+  include(baseComponents, "createPortal", "通用提示卡没有挂到页面最外层");
+  include(helpComponents, "<AppPromptOverlay onClose={onCancel}>", "退出登录提示没有使用统一全屏遮罩");
+  if (results.includes("openDimensionDetail")) throw new Error("评分维度仍保留重复的查看详情入口");
+  include(reportStyles, ".report-sub-score-card", "报告具体小分卡片样式缺失");
+  include(reportStyles, "background: transparent", "报告具体小分仍使用嵌套灰色卡片");
+  include(reportStyles, ".report-feedback-meta", "反馈编号与详情入口没有压缩到同一行");
+  include(reportStyles, ".report-hover-scroll:hover", "评分说明滚动条没有设置为悬停显示");
+  include(reportStyles, "font-size: 10px; line-height: 20px", "小分正文没有使用 10px 字号");
+  if (reportStyles.includes("scrollbar-gutter: stable")) throw new Error("隐藏滚动条仍占用小分文本宽度");
+  include(reportStyles, "overflow-y: overlay", "小分滚动条仍会挤压正文宽度");
+  include(reportStyles, "scrollbar-color: transparent transparent;\n  scrollbar-width: thin", "小分滚动条显隐仍会改变正文宽度");
+  if (appStyles.includes("min-height: 224px")) throw new Error("提示卡仍被固定为多余高度");
   include(workspace, "pauseEvaluation", "暂停评图连接缺失");
   include(knowledge, "getKnowledgeLibrary", "知识库目录接口缺失");
   include(knowledge, "knowledge-relation-row", "知识库正文关联跳转缺失");
@@ -77,18 +132,21 @@ async function test() {
   include(knowledgeStyles, "knowledge-assistant-eye-idle", "知识库助手眼睛没有默认游动动画");
   include(knowledgeAssistant, "您的建筑知识助手", "知识库助手标题缺失");
   include(knowledgeAssistant, "TOOL_DEFINITIONS", "知识库助手内置工具栏缺失");
-  include(knowledgeAssistant, "sendKnowledgeAssistantMessage", "知识库助手没有调用真实后端接口");
+  include(knowledgeAssistant, "streamKnowledgeAssistantMessage", "知识库助手没有调用真实流式后端接口");
   include(knowledgeAssistant, "requestControllerRef", "知识库助手缺少请求取消能力");
   include(knowledgeAssistant, "knowledge-assistant-editor", "知识库助手输入框没有改为自适应编辑区");
   include(knowledgeAssistant, "knowledge-assistant-inline-tool", "知识助手工具没有跟随文字行内显示");
-  include(knowledgeAssistant, 'setMessages((current) => [...current, { role: "user", content }])', "知识助手没有在请求开始时显示用户消息");
+  include(knowledgeAssistant, "CONVERSATION_SCROLL_KEY", "知识助手没有保存或恢复会话滚动位置");
+  include(knowledgeAssistant, 'setMessages((current) => [...current, { role: "user", content, tool: submittedTool }])', "知识助手没有让工具标签随用户消息进入对话");
   include(knowledge, "knowledge-assistant-result-banner", "AI 推荐结果状态栏缺失");
   include(knowledge, "返回原总览", "AI 推荐结果缺少返回原总览入口");
-  include(knowledge, "待专业复核", "AI 推荐没有显示内容复核状态");
+  include(knowledge, "部分内容可能存在遗漏或偏差，请留意核对", "AI 推荐缺少精简的内容提示");
+  if (knowledge.includes("recommendation.matched_fields")) throw new Error("AI 推荐卡仍显示不准确的紫色关键词");
+  if (knowledge.includes("待专业复核")) throw new Error("AI 推荐仍显示内部流程状态");
   include(knowledgeApi, "/api/knowledge/assistant/chat", "知识库助手接口地址缺失");
   include(sidebar, '["dashboard", "create", "knowledge"]', "知识库页面仍会选中项目");
   include(sidebar, "h-[52px] w-[204px]", "侧栏账户样式没有恢复");
-  console.log(`基础检查通过：${routes.length + 52}/${routes.length + 52}`);
+  console.log(`基础检查通过：${routes.length + 102}/${routes.length + 102}`);
 }
 
 test().catch((error) => {

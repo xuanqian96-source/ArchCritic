@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, JSON, String, Text, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -39,6 +39,20 @@ class UserSession(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class Feedback(Base):
+    """保存登录用户提交的问题反馈，供后台后续处理。"""
+
+    __tablename__ = "feedback"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    content: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -159,6 +173,9 @@ class ChatMessage(Base):
     submission_id: Mapped[int] = mapped_column(ForeignKey("submissions.id"))
     role: Mapped[str] = mapped_column(String(20))
     content: Mapped[str] = mapped_column(Text)
+    tool: Mapped[str] = mapped_column(String(50), default="none")
+    citations: Mapped[list[dict]] = mapped_column(JSON, default=list)
+    report_updated: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -261,6 +278,7 @@ class ReportReference(Base):
     report_id: Mapped[int] = mapped_column(ForeignKey("overall_reports.id"))
     position: Mapped[int] = mapped_column(default=0)
     reference_id: Mapped[str] = mapped_column(String(20), default="")
+    library_item_id: Mapped[str] = mapped_column(String(30), default="")
     title: Mapped[str] = mapped_column(String(300))
     source_type: Mapped[str] = mapped_column(String(100))
     excerpt: Mapped[str] = mapped_column(Text)

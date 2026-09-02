@@ -4,16 +4,12 @@ import { Button } from "./baseComponents";
 import { useProfile, type UserProfile } from "../state/profile";
 
 // 渲染账号按钮打开的菜单。
-export function AccountMenu({ onEditProfile, onLogout }: { onEditProfile: () => void; onLogout: () => void }) {
+export function AccountMenu({ helpActive, onEditProfile, onHelpEnter, onHelpLeave, onLogout }: { helpActive: boolean; onEditProfile: () => void; onHelpEnter: () => void; onHelpLeave: () => void; onLogout: () => void }) {
   return (
     <section data-account-menu className="figma-shadow absolute bottom-[72px] left-[21px] z-30 w-[204px] rounded-[20px] border border-[#e8ebef] bg-white p-3">
-      <div className="space-y-1 pb-2">
-        <AccountMenuItem icon="sparkle" text="升级套餐" />
+      <div className="space-y-1">
         <AccountMenuItem icon="profile" text="个人资料" onClick={onEditProfile} />
-        <AccountMenuItem icon="settings" text="设置" />
-      </div>
-      <div className="space-y-1 border-t border-[#e8ebef] pt-2">
-        <AccountMenuItem icon="help" text="帮助" trailing />
+        <AccountMenuItem icon="help" text="帮助" active={helpActive} trailing onMouseEnter={onHelpEnter} onMouseLeave={onHelpLeave} onFocus={onHelpEnter} />
         <AccountMenuItem icon="logout" text="退出登录" onClick={onLogout} />
       </div>
     </section>
@@ -21,9 +17,9 @@ export function AccountMenu({ onEditProfile, onLogout }: { onEditProfile: () => 
 }
 
 // 渲染账号菜单内的一行操作。
-export function AccountMenuItem({ icon, text, trailing = false, onClick }: { icon: MenuIconName; text: string; trailing?: boolean; onClick?: () => void }) {
+export function AccountMenuItem({ icon, text, active = false, trailing = false, onClick, onMouseEnter, onMouseLeave, onFocus }: { icon: MenuIconName; text: string; active?: boolean; trailing?: boolean; onClick?: () => void; onMouseEnter?: () => void; onMouseLeave?: () => void; onFocus?: () => void }) {
   return (
-    <button type="button" className="flex h-9 w-full items-center rounded-[10px] px-2 text-left text-[13px] hover:bg-[#f4f6f8]" onClick={onClick}>
+    <button type="button" className={`flex h-9 w-full items-center rounded-[10px] px-2 text-left text-[13px] hover:bg-[#f4f6f8] ${active ? "bg-[#f4f6f8]" : ""}`} onClick={onClick} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} onFocus={onFocus}>
       <MenuIcon name={icon} />
       <span className="ml-3">{text}</span>
       {trailing && <ChevronIcon direction="right" className="ml-auto" />}
@@ -38,14 +34,17 @@ export function ProfileAvatar({ profile, className = "" }: { profile: UserProfil
     : <span className={`flex items-center justify-center rounded-full bg-[#6c4dff] font-bold text-white ${className}`}>{profile.displayName.slice(0, 1) || "钱"}</span>;
 }
 
-// 渲染可修改用户名、头像和密码的用户资料卡片。
+// 渲染可修改昵称、头像和密码的用户资料卡片。
 export function ProfileModal({ profile, onClose }: { profile: UserProfile; onClose: () => void }) {
   const { updateProfile } = useProfile();
   const avatarInput = useRef<HTMLInputElement>(null);
   const [displayName, setDisplayName] = useState(profile.displayName);
   const [avatarDataUrl, setAvatarDataUrl] = useState(profile.avatarDataUrl);
   const [passwordEditing, setPasswordEditing] = useState(false);
+  const [nicknameTouched, setNicknameTouched] = useState(false);
   const [message, setMessage] = useState("");
+  const nicknameLength = Array.from(displayName.trim()).length;
+  const nicknameError = nicknameTouched && (nicknameLength < 1 || nicknameLength > 12) ? "昵称需要 1–12 个字符，可以使用中文" : "";
 
   // 读取本地图片并暂存在资料卡片中，保存后同步到全部头像。
   const chooseAvatar = (file?: File) => {
@@ -55,17 +54,23 @@ export function ProfileModal({ profile, onClose }: { profile: UserProfile; onClo
     reader.readAsDataURL(file);
   };
 
-  // 保存显示名称和头像资料。
+  // 校验并保存昵称和头像资料。
   const saveProfile = async () => {
-    if (!displayName.trim()) {
-      setMessage("显示名称不能为空。");
+    const nickname = displayName.trim();
+    setNicknameTouched(true);
+    if (Array.from(nickname).length < 1 || Array.from(nickname).length > 12) {
       return;
     }
-    await updateProfile({
-      displayName: displayName.trim(),
-      avatarDataUrl,
-    });
-    onClose();
+    setMessage("");
+    try {
+      await updateProfile({
+        displayName: nickname,
+        avatarDataUrl,
+      });
+      onClose();
+    } catch (profileError) {
+      setMessage(profileError instanceof Error ? profileError.message : "个人资料保存失败，请稍后重试。");
+    }
   };
 
   if (passwordEditing) {
@@ -86,18 +91,19 @@ export function ProfileModal({ profile, onClose }: { profile: UserProfile; onClo
           </button>
           <input ref={avatarInput} className="hidden" type="file" accept="image/*" onChange={(event) => chooseAvatar(event.target.files?.[0])} />
         </div>
-        <label className="absolute left-7 top-[176px] flex h-[58px] w-[528px] items-center rounded-[10px] border border-[#e8ebef] px-4">
-          <span className="w-[88px] text-[14px] text-[#9a9ea7]">显示名称</span>
-          <input className="min-w-0 flex-1 bg-transparent text-[14px] font-bold outline-none" value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
+        <label className={`absolute left-7 top-[176px] flex h-[58px] w-[528px] items-center rounded-[10px] border px-4 ${nicknameError ? "border-[#ff5570] ring-1 ring-[#ff5570]/20" : "border-[#e8ebef]"}`}>
+          <span className="w-[88px] text-[14px] text-[#9a9ea7]">昵称</span>
+          <input aria-invalid={Boolean(nicknameError)} className="min-w-0 flex-1 bg-transparent text-[14px] font-bold outline-none" value={displayName} onChange={(event) => setDisplayName(event.target.value)} onBlur={() => setNicknameTouched(true)} />
         </label>
-        <div className="absolute left-7 top-[246px] flex h-[58px] w-[528px] items-center rounded-[10px] border border-[#e8ebef] px-4">
-          <span className="w-[88px] text-[14px] text-[#9a9ea7]">账号名</span>
+        {nicknameError && <span className="absolute left-9 top-[237px] text-[10px] font-medium leading-4 text-[#d33f58]">{nicknameError}</span>}
+        <div className="absolute left-7 top-[260px] flex h-[58px] w-[528px] items-center rounded-[10px] border border-[#e8ebef] px-4">
+          <span className="w-[88px] text-[14px] text-[#9a9ea7]">账号</span>
           <b className="text-[14px]">{profile.accountName}</b>
         </div>
-        <div className="absolute left-7 top-[316px] flex h-[58px] w-[528px] items-center rounded-[10px] border border-[#e8ebef] px-4">
+        <div className="absolute left-7 top-[330px] flex h-[58px] w-[528px] items-center rounded-[10px] border border-[#e8ebef] px-4">
           <span className="w-[88px] text-[14px] text-[#9a9ea7]">密码</span>
           <b className="text-[14px] tracking-[3px]">••••••••</b>
-          <button type="button" className="ml-3 text-[14px] font-bold text-[#6c4dff]" onClick={() => setPasswordEditing(true)}>修改密码</button>
+          <button type="button" className="profile-password-action ml-auto font-bold text-[#6c4dff]" onClick={() => setPasswordEditing(true)}>修改密码</button>
         </div>
         {message && <span className="absolute bottom-[73px] left-7 text-[12px] text-[#ff5570]">{message}</span>}
         <div className="absolute bottom-7 right-7 flex gap-3">
@@ -169,14 +175,12 @@ export function CameraIcon() {
   return <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[1.8]"><path d="M5 7h3l1.5-2h5L16 7h3a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V9a2 2 0 012-2z" /><circle cx="12" cy="13" r="3" /></svg>;
 }
 
-export type MenuIconName = "sparkle" | "profile" | "settings" | "help" | "logout";
+export type MenuIconName = "profile" | "help" | "logout";
 
 // 渲染账号菜单的线性图标。
 export function MenuIcon({ name }: { name: MenuIconName }) {
   const paths = {
-    sparkle: <path d="M12 2l2.2 6.2L20 10l-5.8 1.8L12 18l-2.2-6.2L4 10l5.8-1.8L12 2z" />,
     profile: <><circle cx="12" cy="8" r="3" /><path d="M5 19c1.2-3.4 3.5-5 7-5s5.8 1.6 7 5" /></>,
-    settings: <><path d="M9.67 4.14a2.34 2.34 0 014.66 0 2.34 2.34 0 003.32 1.91 2.34 2.34 0 012.33 4.03 2.34 2.34 0 000 3.84 2.34 2.34 0 01-2.33 4.03 2.34 2.34 0 00-3.32 1.91 2.34 2.34 0 01-4.66 0 2.34 2.34 0 00-3.32-1.91 2.34 2.34 0 01-2.33-4.03 2.34 2.34 0 000-3.84 2.34 2.34 0 012.33-4.03 2.34 2.34 0 003.32-1.91Z" /><circle cx="12" cy="12" r="3" /></>,
     help: <><circle cx="12" cy="12" r="8" /><path d="M9.8 9a2.3 2.3 0 014.4.8c0 1.8-2.2 2.1-2.2 3.7M12 17h.01" /></>,
     logout: <><path d="M10 5H5v14h5" /><path d="M14 8l4 4-4 4m4-4H9" /></>,
   };

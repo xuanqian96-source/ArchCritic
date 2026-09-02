@@ -18,12 +18,12 @@ STAGE_AGENTS = {
 }
 
 AGENT_DIMENSIONS = {
-    "function_agent": ("功能与流线",),
-    "site_agent": ("场地与回应", "场地", "环境回应"),
-    "form_agent": ("形式与构图", "空间与形式", "形式"),
-    "structure_agent": ("结构与可行性", "结构", "无障碍", "消防"),
-    "concept_agent": ("设计概念", "场地与回应", "形式与构图"),
-    "drawing_agent": ("图面表达",),
+    "function_agent": ("功能", "规范", "功能与流线"),
+    "site_agent": ("场地", "场地与回应", "环境回应"),
+    "form_agent": ("空间", "形式与构图", "空间与形式", "形式"),
+    "structure_agent": ("结构", "规范", "结构与可行性", "无障碍", "消防"),
+    "concept_agent": ("概念", "综合", "设计概念", "场地与回应", "形式与构图"),
+    "drawing_agent": ("综合", "图面表达"),
 }
 
 GENERIC_SOURCE_TYPES = {"规范", "知识卡", "评价维度", "常见问题"}
@@ -99,14 +99,37 @@ def select_references_for_agent(
 
 
 def context_for_agent(context: dict[str, Any], agent_type: str) -> dict[str, Any]:
-    """建立当前专项独立上下文，避免所有 Agent 共用同一批知识。"""
+    """建立当前专项独立上下文，限制知识与辅助裁切图的重复输入。"""
     selected = select_references_for_agent(context.get("references", []), agent_type)
     return {
         **context,
         "references": selected,
+        "drawings": select_drawings_for_agent(context.get("drawings", []), agent_type),
         "knowledge_policy": context.get("knowledge_policy", "compatible"),
         "knowledge_target_agent": agent_type,
     }
+
+
+def select_drawings_for_agent(drawings: list[dict], agent_type: str) -> list[dict]:
+    """所有专项保留原图，只把自动裁切图发送给真正需要的专项。"""
+    relevant_types = {
+        "function_agent": {"plan", "site", "analysis"},
+        "site_agent": {"site", "analysis"},
+        "form_agent": {"elevation", "render", "analysis"},
+        "structure_agent": {"plan", "section", "elevation"},
+        "drawing_agent": {"site", "plan", "section", "elevation", "analysis", "render"},
+        "concept_agent": {"site", "analysis", "render"},
+    }.get(agent_type, set())
+    result = []
+    for drawing in drawings:
+        if not drawing.get("derived_from"):
+            result.append(drawing)
+            continue
+        drawing_type = str(drawing.get("drawing_type", ""))
+        base_type = "plan" if drawing_type.startswith("plan-") else drawing_type
+        if base_type in relevant_types:
+            result.append(drawing)
+    return result
 
 
 def reference_score_for_agent(reference: dict[str, Any], agent_type: str) -> int:

@@ -25,6 +25,51 @@
   background-clip: padding-box;
 }
 
+/* 评分说明保留滚动能力，仅在鼠标进入对应区域后显示滚动滑块。 */
+.report-hover-scroll {
+  scrollbar-color: transparent transparent;
+  scrollbar-width: thin;
+}
+
+.report-hover-scroll:hover {
+  scrollbar-color: #cbd2dc transparent;
+}
+
+.report-hover-scroll::-webkit-scrollbar {
+  width: 7px;
+}
+
+.report-hover-scroll::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.report-hover-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.report-hover-scroll::-webkit-scrollbar-thumb {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  background-clip: padding-box;
+}
+
+.report-hover-scroll:hover::-webkit-scrollbar-thumb {
+  background: #cbd2dc;
+  background-clip: padding-box;
+}
+
+.report-hover-scroll-on-dark:hover {
+  scrollbar-color: rgba(255, 255, 255, .7) transparent;
+}
+
+.report-hover-scroll-on-dark:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, .7);
+  background-clip: padding-box;
+}
+
 .report-dark-scroll {
   scrollbar-color: #60636d transparent;
   scrollbar-width: thin;
@@ -282,3 +327,38 @@
     linear-gradient(90deg, #eef0f3 1px, transparent 1px);
   background-size: 58px 44px;
 }
+.report-chat-tool-menu { position: absolute; right: 22px; bottom: 84px; left: 22px; z-index: 25; padding: 7px; border: 1px solid #e2e4e9; border-radius: 15px; background: #fff; box-shadow: 0 16px 42px rgba(23,23,25,.16); }
+.report-chat-tool-menu > button { width: 100%; min-height: 51px; padding: 7px 9px; display: flex; align-items: center; gap: 11px; border: 0; border-radius: 10px; color: #171719; background: transparent; text-align: left; }
+.report-chat-tool-menu > button:hover, .report-chat-tool-menu > button.active { background: #f2f2f4; }
+.report-chat-tool-menu svg { width: 19px; height: 19px; flex: 0 0 auto; }
+.report-chat-tool-menu button > span { min-width: 0; display: grid; gap: 1px; }
+.report-chat-tool-menu strong { font-size: 12px; line-height: 18px; }
+.report-chat-tool-menu small { overflow: hidden; color: #8b9099; font-size: 10px; line-height: 15px; text-overflow: ellipsis; white-space: nowrap; }
+.report-chat-plus { width: 30px; height: 30px; padding: 0; flex: 0 0 auto; border: 0; border-radius: 50%; color: #171719; background: transparent; font-size: 23px; font-weight: 300; line-height: 28px; }
+.report-chat-plus:hover, .report-chat-plus.active { background: #eceef1; }
+.report-chat-tool-pill { margin: 0 7px 0 0; padding: 0; display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; color: #6c4dff; font-size: 10px; font-weight: 700; line-height: 20px; vertical-align: middle; }
+.report-chat-tool-pill svg { width: 14px; height: 14px; flex: 0 0 auto; }
+.report-chat-tool-pill > button { padding: 0; border: 0; color: inherit; background: transparent; font-size: 13px; line-height: 1; }
+.report-chat-citations { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 5px; }
+.report-chat-citations button { width: fit-content; max-width: 100%; min-height: 25px; padding: 3px 8px; overflow: hidden; border: 1px solid #ded8ff; border-radius: 6px; color: #6c4dff; background: #faf9ff; font-size: 10px; font-weight: 700; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.report-chat-citations button:hover { background: #f0ecff; }
+.report-chat-updated { margin-top: 6px; display: block; color: #6c4dff; font-size: 10px; }
+.knowledge-assistant-composer.report-assistant-composer { position: absolute; right: 22px; bottom: 24px; left: 22px; min-height: 52px; margin: 0; }
+.report-chat-inline-tool { max-width: calc(100% - 4px); }
+.report-assistant-panel { z-index: 62; }
+.report-assistant-suggestions { margin-left: 45px; }
+.report-sub-score-card { min-width: 0; padding: 8px 10px; display: flex; flex-direction: column; align-items: flex-start; overflow: hidden; color: #171719; background: transparent; text-align: left; }
+.report-sub-score-card + .report-sub-score-card { border-left: 1px solid #eceef2; }
+.report-sub-score-card > span { width: 100%; overflow: hidden; color: #53565e; font-size: 12px; font-weight: 700; line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
+.report-sub-score-card > b { margin-top: 5px; color: #6c4dff; font-size: 24px; line-height: 28px; }
+.report-sub-score-card > b small { color: #9a9ea7; font-size: 11px; font-weight: 500; }
+.report-sub-score-copy { width: 100%; min-height: 0; margin-top: 8px; flex: 1; overflow-y: auto; overflow-y: overlay; color: #53565e; font-size: 10px; line-height: 20px; }
+.report-sub-score-copy > p + p { margin-top: 8px; }
+.report-feedback-card { position: relative; width: 100%; min-height: 72px; padding: 10px 12px; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 5px 9px; border: 1px solid #eceef2; border-radius: 12px; color: #171719; background: #fafbfc; text-align: left; }
+.report-feedback-card:hover { border-color: #ddd7ff; background: #f8f6ff; }
+.report-feedback-badge { min-width: 66px; height: 24px; padding: 0 8px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid; border-radius: 999px; font-size: 10px; font-weight: 700; line-height: 12px; }
+.report-feedback-card > b { padding-top: 3px; display: -webkit-box; overflow: hidden; font-size: 12px; line-height: 18px; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.report-feedback-meta { grid-column: 1 / 3; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.report-feedback-references { min-width: 0; display: flex; flex-wrap: nowrap; gap: 4px; overflow: hidden; }
+.report-feedback-references i { color: #6c4dff; font-size: 10px; font-style: normal; font-weight: 700; }
+.report-feedback-meta > small { flex: none; color: #8b9099; font-size: 10px; line-height: 14px; }

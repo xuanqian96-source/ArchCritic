@@ -1,6 +1,6 @@
 // 提交接口：负责草稿、附件和流式评图。
 import { apiUrl, requestJson, uploadForm } from "./client";
-import type { Attachment, EvaluationStreamEvent, Submission } from "../types/api";
+import type { Attachment, EvaluationStreamEvent, Submission, SubmissionWorkspace } from "../types/api";
 
 export type SubmissionPayload = Omit<Submission, "id" | "created_at" | "updated_at" | "image_urls"> & { image_urls?: string[] };
 
@@ -16,6 +16,11 @@ export function createSubmission(payload: SubmissionPayload): Promise<Submission
 // 获取提交详情。
 export function getSubmission(submissionId: number): Promise<Submission> {
   return requestJson(`/api/submissions/${submissionId}`);
+}
+
+// 一次获取进入工作台所需的完整快照。
+export function getSubmissionWorkspace(submissionId: number): Promise<SubmissionWorkspace> {
+  return requestJson(`/api/submissions/${submissionId}/workspace`);
 }
 
 // 更新草稿提交。

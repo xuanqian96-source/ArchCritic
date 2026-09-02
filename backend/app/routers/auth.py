@@ -1,13 +1,20 @@
 """提供本地注册、登录、退出和当前用户接口。"""
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import get_db
 from app.models import Project, User, UserSession
-from app.schemas import AuthLogin, AuthPasswordUpdate, AuthProfileUpdate, AuthRegister, AuthUserRead
+from app.schemas import (
+    AuthAccountAvailabilityRead,
+    AuthLogin,
+    AuthPasswordUpdate,
+    AuthProfileUpdate,
+    AuthRegister,
+    AuthUserRead,
+)
 from app.services.auth import (
     create_user_session,
     get_current_user,
@@ -45,6 +52,19 @@ def set_session_cookie(response: Response, token: str) -> None:
     )
 
 
+@router.get("/account-availability", response_model=AuthAccountAvailabilityRead)
+async def account_availability(
+    account: str = Query(..., min_length=3, max_length=12, pattern=r"^[A-Za-z0-9]+$"),
+    db: Session = Depends(get_db),
+) -> AuthAccountAvailabilityRead:
+    """供首次注册页检查账号是否已被使用。"""
+    username = normalize_username(account)
+    existing_id = db.execute(
+        select(User.id).where(func.lower(User.username) == username)
+    ).scalar_one_or_none()
+    return AuthAccountAvailabilityRead(available=existing_id is None)
+
+
 @router.post("/register", response_model=AuthUserRead, status_code=status.HTTP_201_CREATED)
 async def register(
     payload: AuthRegister,
@@ -55,7 +75,7 @@ async def register(
     username = normalize_username(payload.username)
     existing = db.execute(select(User).where(func.lower(User.username) == username)).scalar_one_or_none()
     if existing is not None:
-        raise HTTPException(status_code=409, detail="该用户名已被使用。")
+        raise HTTPException(status_code=409, detail="该账号已被使用。")
     has_registered_user = db.execute(
         select(User.id).where(User.username.is_not(None)).limit(1)
     ).scalar_one_or_none()
@@ -86,7 +106,7 @@ async def login(
     username = normalize_username(payload.username)
     user = db.execute(select(User).where(func.lower(User.username) == username)).scalar_one_or_none()
     if user is None or not verify_password(payload.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="用户名或密码不正确。")
+        raise HTTPException(status_code=401, detail="账号或密码不正确。")
     token, _ = create_user_session(db, user)
     set_session_cookie(response, token)
     return user_response(user)
@@ -104,7 +124,7 @@ async def update_profile(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> AuthUserRead:
-    """更新当前账户显示名称。"""
+    """更新当前账户昵称。"""
     user.name = payload.display_name.strip()
     db.commit()
     db.refresh(user)

@@ -3,11 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ArchCritic | 深色模式官网</title>
+  <title>ArchCritic | 公共建筑设计教学辅助平台</title>
   <meta
     name="description"
-    content="ArchCritic 是面向建筑设计教学与方案迭代的 AI 评图工作台，帮助学生上传图纸、调用多角色审阅、对比版本，并生成可追溯的评图报告。"
+    content="ArchCritic 面向公共建筑设计教学，将知识学习、案例理解、设计实践、AI 辅助评图与版本复盘连接在同一平台中。"
   />
+  <link rel="icon" href="data:,">
   <style>
     @font-face {
       font-family: "Archivo SemiExpanded";
@@ -2780,6 +2781,871 @@
       background: #6c4dff;
     }
 
+    /* 首页最终内容版：真实产品画面、教学闭环与知识学习叙事。 */
+    html,
+    body {
+      scrollbar-width: none !important;
+    }
+
+    html::-webkit-scrollbar,
+    body::-webkit-scrollbar {
+      display: none;
+      width: 0;
+      height: 0;
+    }
+
+    html,
+    body {
+      cursor: default !important;
+    }
+
+    a,
+    button,
+    [role="button"] {
+      cursor: pointer !important;
+    }
+
+    .cursor {
+      display: none !important;
+    }
+
+    .overlay-scrollbar {
+      position: fixed;
+      top: 6px;
+      right: 0;
+      bottom: 6px;
+      z-index: 2400;
+      width: 28px;
+      opacity: 0;
+      pointer-events: auto;
+      transition: opacity 180ms ease;
+      user-select: none;
+      touch-action: none;
+    }
+
+    .overlay-scrollbar::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      right: 11px;
+      bottom: 0;
+      width: 7px;
+      border-radius: 999px;
+      background: rgba(15, 17, 25, 0.32);
+      opacity: 0;
+      transition: opacity 180ms ease;
+    }
+
+    .overlay-scrollbar:hover,
+    .overlay-scrollbar.is-visible,
+    .overlay-scrollbar.is-dragging {
+      opacity: 1;
+    }
+
+    .overlay-scrollbar:hover::before,
+    .overlay-scrollbar.is-dragging::before {
+      opacity: 1;
+    }
+
+    .overlay-scrollbar-thumb {
+      position: absolute;
+      top: 0;
+      right: 11px;
+      width: 7px;
+      min-height: 48px;
+      border-radius: 999px;
+      background: rgba(159, 143, 255, 0.82);
+      box-shadow: 0 0 18px rgba(108, 77, 255, 0.3);
+      cursor: grab !important;
+      will-change: transform, height;
+      pointer-events: auto;
+    }
+
+    .overlay-scrollbar.is-dragging .overlay-scrollbar-thumb {
+      cursor: grabbing !important;
+      background: #8b73ff;
+    }
+
+    .hero-swap-card::before {
+      display: none;
+    }
+
+    .hero-swap-card img {
+      height: 100%;
+      border-radius: inherit;
+    }
+
+    .motion-hero .hero-actions,
+    .motion-hero .hero-proof {
+      display: none !important;
+    }
+
+    .vision-loop,
+    .knowledge-story {
+      min-height: 112svh;
+      margin-top: 0;
+    }
+
+    .vision-loop > .vision-loop-inner,
+    #workflow > .workflow {
+      top: 0;
+      min-height: 100svh;
+      padding-top: clamp(46px, 6vh, 72px);
+      padding-bottom: clamp(46px, 6vh, 72px);
+    }
+
+    .motion-hero {
+      align-items: center;
+    }
+
+    .motion-hero .hero-copy {
+      width: min(44vw, 700px);
+      gap: 22px;
+    }
+
+    .motion-hero .hero-copy h1 {
+      max-width: 700px;
+      font-size: clamp(42px, 4.25vw, 66px);
+      line-height: 1.04;
+    }
+
+    .motion-hero .hero-summary,
+    .section-lede {
+      font-size: clamp(13px, 1.02vw, 16px);
+      line-height: 1.65;
+    }
+
+    .motion-hero .hero-scene {
+      top: 50%;
+      right: 2vw;
+      width: min(49vw, 860px);
+      height: auto;
+      aspect-ratio: 1536 / 820;
+      translate: 0 -46%;
+    }
+
+    .motion-hero .hero-swap-card[data-card-state="front"] {
+      transform: translate3d(-50%, -50%, 96px) skewY(2.4deg) scale(1);
+    }
+
+    .motion-hero .hero-swap-card[data-card-state="middle"] {
+      transform: translate3d(calc(-50% + 42px), calc(-50% - 48px), 18px) skewY(2.4deg) scale(0.97);
+    }
+
+    .motion-hero .hero-swap-card[data-card-state="back"] {
+      transform: translate3d(calc(-50% + 84px), calc(-50% - 96px), -78px) skewY(2.4deg) scale(0.94);
+    }
+
+    .section-kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      color: rgba(221, 225, 233, 0.68) !important;
+    }
+
+    .section-kicker::before {
+      content: "";
+      width: 38px;
+      height: 1px;
+      flex: 0 0 38px;
+      background: #6c4dff;
+    }
+
+    .section-title {
+      line-height: 1.08 !important;
+    }
+
+    html[lang="zh-CN"] .title-line {
+      margin-bottom: 0.11em;
+    }
+
+    .vision-loop .title-line,
+    #product .title-line,
+    .knowledge-story .title-line,
+    #workflow .title-line,
+    .agents-band .title-line {
+      opacity: 1 !important;
+      transform: none !important;
+      filter: none !important;
+    }
+
+    .vision-loop .section-kicker,
+    .vision-loop .section-title,
+    .vision-loop .section-lede,
+    .vision-loop .loop-orbit,
+    .knowledge-story .section-kicker,
+    .knowledge-story .section-title,
+    .knowledge-story .section-lede,
+    #workflow .section-kicker,
+    #workflow .section-title,
+    #workflow .section-lede,
+    #workflow .flow-panel {
+      opacity: 1 !important;
+      transform: none !important;
+      filter: none !important;
+    }
+
+    .vision-loop-inner,
+    .story-layout {
+      grid-template-columns: minmax(420px, 0.9fr) minmax(560px, 1.1fr);
+      gap: clamp(30px, 4vw, 58px);
+      align-items: center;
+    }
+
+    .loop-copy,
+    .story-copy {
+      align-self: center;
+    }
+
+    .loop-orbit {
+      position: relative;
+      width: min(48vw, 640px);
+      aspect-ratio: 1;
+      justify-self: end;
+      border-radius: 50%;
+      background:
+        radial-gradient(circle, rgba(108, 77, 255, 0.2) 0 18%, transparent 44%),
+        radial-gradient(circle, transparent 58%, rgba(108, 77, 255, 0.14) 58.4% 59%, transparent 59.4%);
+    }
+
+    .loop-orbit::before,
+    .loop-orbit::after {
+      content: "";
+      position: absolute;
+      inset: 9%;
+      border-radius: 50%;
+      pointer-events: none;
+    }
+
+    .loop-orbit::before {
+      border: 1px solid rgba(244, 246, 248, 0.17);
+      box-shadow: inset 0 0 54px rgba(108, 77, 255, 0.08), 0 0 70px rgba(108, 77, 255, 0.08);
+    }
+
+    .loop-orbit::after {
+      background: conic-gradient(from 90deg, transparent 0 64%, rgba(108, 77, 255, 0.34) 70%, #9b87ff 82%, #6c4dff 89%, transparent 97%);
+      -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
+      mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
+      filter: drop-shadow(0 0 6px rgba(139, 115, 255, 0.9)) drop-shadow(0 0 16px rgba(108, 77, 255, 0.58));
+      animation: loopOrbit 9s linear infinite;
+    }
+
+    @keyframes loopOrbit {
+      to { transform: rotate(360deg); }
+    }
+
+    .loop-center {
+      position: absolute;
+      inset: 50% auto auto 50%;
+      width: 35%;
+      aspect-ratio: 1;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      border: 1px solid rgba(108, 77, 255, 0.45);
+      border-radius: 50%;
+      background: radial-gradient(circle at 38% 30%, rgba(139, 115, 255, 0.38), rgba(14, 15, 24, 0.94) 68%);
+      box-shadow: 0 0 80px rgba(108, 77, 255, 0.22);
+      color: #f4f6f8;
+      font-size: clamp(16px, 1.5vw, 23px);
+      font-weight: 650;
+      line-height: 1.35;
+      text-align: center;
+      transform: translate(-50%, -50%);
+    }
+
+    .loop-node {
+      position: absolute;
+      width: 162px;
+      min-height: 74px;
+      padding: 13px 14px;
+      border: 1px solid rgba(232, 235, 239, 0.14);
+      border-radius: 16px;
+      background: rgba(15, 17, 25, 0.9);
+      box-shadow: 0 20px 54px rgba(0, 0, 0, 0.3);
+      transform: translate(-50%, -50%);
+    }
+
+    .loop-node strong,
+    .loop-node small {
+      display: block;
+    }
+
+    .loop-node strong {
+      color: #f4f6f8;
+      font-size: 14px;
+    }
+
+    .loop-node small {
+      margin-top: 5px;
+      color: rgba(221, 225, 233, 0.6);
+      font-size: 11px;
+      line-height: 1.45;
+    }
+
+    .loop-node:nth-of-type(2) { left: 50%; top: 8%; }
+    .loop-node:nth-of-type(3) { left: 88%; top: 28%; }
+    .loop-node:nth-of-type(4) { left: 88%; top: 72%; }
+    .loop-node:nth-of-type(5) { left: 50%; top: 92%; }
+    .loop-node:nth-of-type(6) { left: 12%; top: 72%; }
+    .loop-node:nth-of-type(7) { left: 12%; top: 28%; }
+
+    .vision-loop .section-title,
+    #product .section-title,
+    #workflow .section-title {
+      font-size: clamp(38px, 4.25vw, 66px) !important;
+    }
+
+    #product .product-showcase {
+      grid-template-columns: minmax(480px, 1.04fr) minmax(520px, 0.96fr);
+      gap: clamp(28px, 4vw, 56px);
+    }
+
+    #product .section-lede {
+      max-width: 600px;
+    }
+
+    .product-feature-grid .feature-preview {
+      display: none !important;
+    }
+
+    .product-feature-grid .feature-card:hover > .feature-icon,
+    .product-feature-grid .feature-card:hover > h3,
+    .product-feature-grid .feature-card:hover > p {
+      opacity: 1;
+      filter: none;
+      transform: none;
+    }
+
+    .knowledge-story .story-layout {
+      grid-template-columns: minmax(500px, 0.94fr) minmax(420px, 0.76fr);
+    }
+
+    .knowledge-story .section-title {
+      font-size: clamp(42px, 4.8vw, 72px);
+    }
+
+    .knowledge-metrics {
+      display: grid;
+      align-self: center;
+      border-top: 1px solid rgba(232, 235, 239, 0.18);
+      border-bottom: 1px solid rgba(232, 235, 239, 0.18);
+    }
+
+    .knowledge-metrics[data-reveal] {
+      opacity: 1 !important;
+      transform: none !important;
+      filter: none !important;
+    }
+
+    .knowledge-metric {
+      display: grid;
+      grid-template-columns: minmax(150px, 0.7fr) 1fr;
+      align-items: center;
+      gap: 28px;
+      min-height: 142px;
+      padding: 22px 0;
+      border-bottom: 1px solid rgba(232, 235, 239, 0.14);
+    }
+
+    .knowledge-metric:last-child {
+      border-bottom: 0;
+    }
+
+    .knowledge-metric strong {
+      color: #8b73ff;
+      font-family: "Archivo SemiExpanded", sans-serif;
+      font-size: clamp(58px, 6vw, 92px);
+      font-weight: 650;
+      line-height: 0.82;
+    }
+
+    .knowledge-metric span {
+      color: rgba(221, 225, 233, 0.66);
+      font-size: 14px;
+    }
+
+    #workflow {
+      min-height: 112svh;
+      margin-top: 0;
+    }
+
+    #workflow .workflow {
+      grid-template-columns: minmax(450px, 0.92fr) minmax(590px, 1.08fr);
+      gap: clamp(28px, 4vw, 58px);
+      align-items: center;
+    }
+
+    #workflow .section-title {
+      font-size: clamp(36px, 3.65vw, 54px) !important;
+    }
+
+    #workflow .flow-panel {
+      padding: 8px;
+    }
+
+    #workflow .workflow-carousel {
+      min-height: 0;
+      gap: 8px;
+      padding: 8px;
+    }
+
+    #workflow .workflow-carousel-stage {
+      width: 100%;
+      flex: none;
+      aspect-ratio: 1536 / 820;
+    }
+
+    #workflow .workflow-slide figcaption {
+      display: none;
+    }
+
+    #workflow .workflow-slide figcaption strong {
+      font-size: 14px;
+    }
+
+    #workflow .workflow-carousel-control {
+      min-height: 48px;
+      justify-content: space-between;
+      align-items: center;
+      gap: 22px;
+      padding: 0 4px 2px;
+    }
+
+    .workflow-caption-display {
+      min-width: 0;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: center;
+      gap: 12px;
+      color: rgba(221, 225, 233, 0.62);
+      font-size: 11px;
+      line-height: 1.45;
+    }
+
+    .workflow-caption-display strong {
+      color: #f4f6f8;
+      font-size: 14px;
+      white-space: nowrap;
+    }
+
+    .workflow-caption-display span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .agents-band {
+      min-height: 100svh;
+      margin-top: 0;
+      padding: clamp(66px, 7vh, 88px) var(--page-pad) clamp(52px, 6vh, 72px);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .agents-band > .section-inner:first-child {
+      position: static;
+      min-height: 0;
+      display: block;
+      padding: 0;
+    }
+
+    .agents-band .section-kicker {
+      margin-bottom: 12px;
+    }
+
+    .agents-band .section-title {
+      max-width: none;
+      white-space: nowrap;
+      font-size: clamp(34px, 4vw, 62px);
+      line-height: 1.08;
+    }
+
+    .agents-band .section-lede {
+      max-width: 940px;
+      margin-top: 12px;
+    }
+
+    .agents-band .agent-gallery {
+      width: min(100%, 1180px);
+      margin: 22px auto 0;
+    }
+
+    .agents-band .agent-card {
+      min-height: 390px;
+    }
+
+    .agents-band [data-reveal] {
+      opacity: 1 !important;
+      transform: none !important;
+      filter: none !important;
+    }
+
+    .compact-site-info {
+      min-height: calc(100svh - 64px);
+      padding-top: clamp(96px, 13vh, 130px);
+    }
+
+    .compact-site-info + .footer,
+    .footer {
+      margin-bottom: 0;
+    }
+
+    html.dark-edition .footer {
+      background: #07080d;
+      border-top-color: rgba(232, 235, 239, 0.1);
+    }
+
+    .page-prev-button {
+      position: fixed !important;
+      left: calc(50% - 31px) !important;
+      top: auto !important;
+      bottom: clamp(16px, 2.5vh, 26px) !important;
+      z-index: 999 !important;
+      display: grid !important;
+      place-items: center;
+      width: 44px;
+      height: 36px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      box-shadow: none;
+      transform: translate3d(-50%, 0, 0) !important;
+      transition: opacity 180ms ease, transform 220ms ease;
+    }
+
+    .page-next-button {
+      left: calc(50% + 31px) !important;
+      bottom: clamp(16px, 2.5vh, 26px) !important;
+    }
+
+    .page-prev-button,
+    .page-next-button {
+      z-index: 1301 !important;
+      width: 44px !important;
+      height: 36px !important;
+      border: 0 !important;
+      border-radius: 0 !important;
+      background: transparent !important;
+      box-shadow: none !important;
+      backdrop-filter: none !important;
+    }
+
+    .page-prev-button:hover,
+    .page-next-button:hover {
+      background: transparent !important;
+      transform: translate3d(-50%, -3px, 0) !important;
+    }
+
+    .page-prev-button[hidden],
+    .page-next-button[hidden] {
+      display: none !important;
+    }
+
+    .page-prev-button.is-solo,
+    .page-next-button.is-solo {
+      left: 50% !important;
+    }
+
+    .page-next-button .page-next-icon {
+      transform: translate3d(-50%, -50%, 0) !important;
+    }
+
+    .page-prev-button .page-next-icon {
+      transform: translate3d(-50%, -50%, 0) rotate(180deg) !important;
+    }
+
+    /* 核心介绍页统一使用一屏高度，翻页后正文与视觉内容始终在视口正中。 */
+    #teaching-loop,
+    #product,
+    #knowledge-story,
+    #workflow {
+      min-height: 100svh !important;
+      height: 100svh;
+      margin-top: 0 !important;
+      padding-top: 0;
+      padding-bottom: 0;
+    }
+
+    #teaching-loop > .section-inner,
+    #product > .section-inner,
+    #knowledge-story > .section-inner,
+    #workflow > .section-inner {
+      position: relative !important;
+      top: auto !important;
+      min-height: 100svh !important;
+      height: 100svh;
+      padding-top: clamp(62px, 7vh, 78px) !important;
+      padding-bottom: clamp(62px, 7vh, 78px) !important;
+      align-content: center;
+    }
+
+    .vision-loop-inner,
+    .story-layout,
+    #product .product-showcase,
+    #workflow .workflow {
+      align-items: center;
+    }
+
+    .loop-copy,
+    .story-copy,
+    #product .product-showcase > div,
+    #workflow .workflow > div {
+      align-self: center;
+    }
+
+    /* 一屏页面不再继承旧长滚动动画的缩放与模糊，确保文字保持原生清晰度。 */
+    #teaching-loop [data-reveal],
+    #product [data-reveal],
+    #knowledge-story [data-reveal],
+    #workflow [data-reveal],
+    #agents [data-reveal] {
+      opacity: 1 !important;
+      transform: none !important;
+      filter: none !important;
+      will-change: auto !important;
+    }
+
+    #workflow .workflow > div:first-child {
+      align-self: stretch;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    #workflow .workflow-inline-steps {
+      display: none !important;
+    }
+
+    .peek-strip {
+      display: none !important;
+    }
+
+    .agents-band {
+      min-height: 100svh !important;
+      height: 100svh;
+      padding-top: clamp(44px, 5vh, 58px);
+      padding-bottom: clamp(44px, 5vh, 58px);
+      justify-content: center;
+    }
+
+    .agents-band .section-lede {
+      max-width: none;
+      white-space: nowrap;
+    }
+
+    .compact-site-info {
+      min-height: 100svh;
+      height: 100svh;
+      align-content: center;
+      padding-top: clamp(58px, 7vh, 74px);
+      padding-bottom: clamp(58px, 7vh, 74px);
+    }
+
+    /* 除品牌首屏外，所有白色主标题统一采用教学闭环页的字号规格。 */
+    .motion-hero .hero-copy h1,
+    .vision-loop .section-title,
+    #product .section-title,
+    .knowledge-story .section-title,
+    #workflow .section-title,
+    .agents-band .section-title,
+    .compact-site-info .site-info-title {
+      font-size: clamp(38px, 4.25vw, 66px) !important;
+      line-height: 1.12 !important;
+    }
+
+    /* 主标题只由统一行高控制段落节奏，避免部分页面叠加行距。 */
+    html[lang="zh-CN"] .title-line {
+      margin-bottom: 0;
+    }
+
+    .homepage-records {
+      position: absolute;
+      z-index: 4;
+      left: 50%;
+      bottom: clamp(62px, 7vh, 78px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      width: max-content;
+      max-width: calc(100% - 32px);
+      transform: translateX(-50%);
+      color: rgba(221, 225, 233, 0.52);
+      font-size: 11px;
+      line-height: 1.5;
+      white-space: nowrap;
+    }
+
+    .homepage-records a {
+      color: inherit;
+      text-decoration: none;
+      transition: color 180ms ease;
+    }
+
+    .homepage-records a:hover,
+    .homepage-records a:focus-visible {
+      color: rgba(244, 246, 248, 0.86);
+    }
+
+    .site-info-panel .author-line {
+      color: rgba(221, 225, 233, 0.72);
+    }
+
+    @media (max-width: 640px) {
+      .homepage-records {
+        flex-direction: column;
+        gap: 3px;
+        white-space: normal;
+        text-align: center;
+      }
+    }
+
+    .story-media {
+      position: relative;
+      min-height: 510px;
+      align-self: center;
+    }
+
+    .product-shot {
+      position: absolute;
+      overflow: hidden;
+      margin: 0;
+      border: 1px solid rgba(232, 235, 239, 0.14);
+      border-radius: 22px;
+      background: #f4f6f8;
+      box-shadow: 0 34px 90px rgba(0, 0, 0, 0.38);
+    }
+
+    .product-shot img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: top left;
+    }
+
+    .story-media .product-shot-primary {
+      inset: 0 0 54px 0;
+    }
+
+    .knowledge-story .product-shot-primary {
+      inset: 0;
+    }
+
+    .story-media .product-shot-secondary {
+      right: -14px;
+      bottom: 0;
+      width: 58%;
+      height: 54%;
+      border-color: rgba(108, 77, 255, 0.42);
+    }
+
+    .knowledge-facts,
+    .assistant-path,
+    .agent-extra-roles {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+      margin-top: 28px;
+    }
+
+    .knowledge-facts span,
+    .assistant-path span,
+    .agent-extra-roles span {
+      padding: 8px 11px;
+      border: 1px solid rgba(108, 77, 255, 0.28);
+      border-radius: 999px;
+      background: rgba(108, 77, 255, 0.09);
+      color: rgba(221, 225, 233, 0.78);
+      font-size: 12px;
+    }
+
+    .assistant-screens {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      align-self: center;
+    }
+
+    .assistant-screen {
+      overflow: hidden;
+      margin: 0;
+      border: 1px solid rgba(232, 235, 239, 0.14);
+      border-radius: 22px;
+      background: #f4f6f8;
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.32);
+    }
+
+    .assistant-screen img {
+      display: block;
+      width: 100%;
+      aspect-ratio: 0.93;
+      object-fit: cover;
+      object-position: top right;
+    }
+
+    .assistant-screen figcaption {
+      padding: 15px 17px;
+      border-top: 1px solid rgba(232, 235, 239, 0.14);
+      background: #0d0f16;
+      color: rgba(221, 225, 233, 0.72);
+      font-size: 12px;
+    }
+
+    .assistant-screen figcaption strong {
+      display: block;
+      margin-bottom: 4px;
+      color: #f4f6f8;
+      font-size: 15px;
+    }
+
+    .agents-band .section-lede {
+      max-width: 820px;
+    }
+
+    .agent-extra-roles {
+      margin-top: 22px;
+    }
+
+    .compact-site-info .site-info-grid {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+
+    @media (max-width: 980px) {
+      .vision-loop-inner,
+      .story-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .loop-orbit {
+        width: min(86vw, 600px);
+        justify-self: center;
+      }
+
+      .story-media {
+        min-height: 430px;
+      }
+
+      .assistant-screens {
+        grid-template-columns: 1fr;
+      }
+
+      .compact-site-info .site-info-grid {
+        grid-template-columns: 1fr;
+      }
+
+      #product .product-showcase,
+      #workflow .workflow {
+        grid-template-columns: 1fr;
+      }
+
+      .agents-band .section-title {
+        white-space: normal;
+      }
+    }
+
     @media (pointer: coarse), (prefers-reduced-motion: reduce) {
       .cursor {
         display: none !important;
@@ -2790,6 +3656,9 @@
 <body class="no-js">
   <div class="cursor cursor-dot" aria-hidden="true"></div>
   <div class="cursor cursor-ring" aria-hidden="true"></div>
+  <div class="overlay-scrollbar" role="scrollbar" aria-label="页面滚动条" aria-controls="top" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+    <div class="overlay-scrollbar-thumb"></div>
+  </div>
   <div class="site-shell">
     <div class="topbar-hover-zone" aria-hidden="true"></div>
     <header class="topbar" aria-label="Site navigation">
@@ -2797,14 +3666,14 @@
         <img class="brand-logo" src="LOGO-black.png" alt="ArchCritic" width="1973" height="178" decoding="async">
       </a>
       <nav class="nav-links" aria-label="主导航">
-        <a href="#hero">产品</a>
-        <a href="#credibility">用户数据</a>
+        <a href="#hero">平台</a>
+        <a href="#teaching-loop">教学闭环</a>
+        <a href="#knowledge-story">知识库</a>
         <a href="#workflow">流程</a>
         <a href="#agents">智能体</a>
-        <a href="#site-info">更多</a>
       </nav>
       <div class="topbar-actions">
-        <a class="button button-primary" href="/#/dashboard" target="_parent">体验 Demo</a>
+        <a class="button button-primary" href="/#/dashboard" target="_parent">开始使用</a>
       </div>
     </header>
 
@@ -2814,56 +3683,66 @@
         <div class="cta-inner">
           <img class="hero-logo-large" src="LOGO-black.png" alt="ArchCritic" width="1973" height="178" decoding="async" data-reveal>
           <p class="cta-copy cta-tagline" data-reveal>
-            面向建筑评图的 AI 工作台，让图纸、审阅、证据与报告形成可追溯的设计反馈闭环。
+            面向公共建筑设计教学，连接知识学习、案例理解、设计实践、AI 评图与版本复盘。
           </p>
+        </div>
+        <div class="homepage-records" aria-label="网站备案信息">
+          <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">粤ICP备2026026176号</a>
+          <a href="https://beian.mps.gov.cn/#/query/webSearch?code=44010602016941" target="_blank" rel="noopener noreferrer">粤公网安备44010602016941号</a>
         </div>
       </section>
 
       <section class="motion-hero" id="hero" aria-labelledby="hero-title">
         <div class="hero-scene" aria-hidden="true" data-hero-card-swap>
           <figure class="hero-swap-card" data-card-state="front">
-            <img src="figma-page-shots/dashboard-projects.png" alt="" />
+            <img src="product-shots/knowledge-library-final.png" alt="ArchCritic 当前知识库页面" />
           </figure>
           <figure class="hero-swap-card" data-card-state="middle">
-            <img src="figma-page-shots/processing.png" alt="" />
+            <img src="product-shots/project-info-current.png" alt="ArchCritic 当前项目信息页面" />
           </figure>
           <figure class="hero-swap-card" data-card-state="back">
-            <img src="figma-page-shots/stage-agents.png" alt="" />
+            <img src="product-shots/report-current.png" alt="ArchCritic 当前评图报告页面" />
           </figure>
         </div>
         <div class="hero-vignette" aria-hidden="true"></div>
 
         <div class="hero-copy">
-          <p class="eyebrow" data-reveal>为建筑评图而生的 AI 工作台</p>
+          <p class="eyebrow" data-reveal>公共建筑设计教学辅助平台</p>
           <h1 id="hero-title" data-reveal>
-            <span class="hero-line">ArchCritic</span>
-            <span class="hero-line">先读懂图纸</span>
-            <span class="hero-line">再进入评图。</span>
+            <span class="hero-line">不止于评图</span>
+            <span class="hero-line">陪伴完整的</span>
+            <span class="hero-line">设计学习过程</span>
           </h1>
           <p class="hero-summary" data-reveal>
-            面向建筑设计教学与方案迭代的 AI 评图工作台。上传图纸，调用多角色 Agent 审阅空间逻辑、表达质量与版本变化，再生成可追溯的评图报告。
+            ArchCritic 将原本分散在课程知识、案例参考、设计实践和评图反馈中的学习过程连接起来，让学生在设计前建立认知，在设计中查找方法，在评图后理解问题，并把反馈带回下一轮修改。
           </p>
-          <div class="hero-actions" data-reveal>
-            <a class="button button-primary" href="#product">了解产品</a>
-          </div>
-          <div class="hero-proof" aria-label="产品亮点" data-reveal>
-            <div class="proof-item">
-              <span class="proof-k">04</span>
-              <span class="proof-v">评图智能体</span>
-            </div>
-            <div class="proof-item">
-              <span class="proof-k">03</span>
-              <span class="proof-v">审阅阶段</span>
-            </div>
-            <div class="proof-item">
-              <span class="proof-k">1→N</span>
-              <span class="proof-v">版本记忆</span>
-            </div>
-          </div>
         </div>
       </section>
 
-      <div class="peek-strip" aria-hidden="true">评图流程从这里开始</div>
+      <section class="section vision-loop" id="teaching-loop">
+        <div class="section-inner vision-loop-inner">
+          <div class="loop-copy">
+            <p class="section-kicker" data-reveal>教学定位与愿景</p>
+            <h2 class="section-title line-title" data-reveal>
+              <span class="title-line">从学会原理，</span>
+              <span class="title-line">到反馈迭代</span>
+              <span class="title-line">设计方案</span>
+            </h2>
+            <p class="section-lede" data-reveal>
+              学生先学习公共建筑设计原理，再通过优秀案例理解原理如何落地，然后把知识用于自己的设计，最后通过 AI 评图发现问题，回到知识和案例中继续学习与修改。
+            </p>
+          </div>
+          <div class="loop-orbit" aria-label="公共建筑设计教学闭环" data-reveal>
+            <div class="loop-center">公共建筑<br>设计学习</div>
+            <div class="loop-node"><strong>知识学习</strong><small>理解公共建筑设计原理与方法</small></div>
+            <div class="loop-node"><strong>案例理解</strong><small>观察方法如何在真实项目中落地</small></div>
+            <div class="loop-node"><strong>设计实践</strong><small>将所学用于自己的任务与方案</small></div>
+            <div class="loop-node"><strong>AI 评图</strong><small>结合任务、图纸与知识发现问题</small></div>
+            <div class="loop-node"><strong>反馈学习</strong><small>解释问题并返回相关知识与案例</small></div>
+            <div class="loop-node"><strong>版本修改</strong><small>完成下一版并回看修改过程</small></div>
+          </div>
+        </div>
+      </section>
 
       <div class="type-bridge" aria-hidden="true">
         <span class="bridge-word bridge-a-1 is-solid" data-from-x="-18" data-to-x="18" data-from-y="18" data-to-y="-26" data-from-rotate="-4" data-to-rotate="5" data-from-scale="0.9" data-to-scale="1.18" data-from-opacity="0.02" data-to-opacity="0.22">上传</span>
@@ -2874,150 +3753,69 @@
       <section class="section" id="product">
         <div class="section-inner product-showcase">
           <div>
-            <p class="section-kicker" data-reveal>产品核心</p>
+            <p class="section-kicker" data-reveal>教学辅助方式</p>
             <h2 class="section-title line-title" data-reveal>
-              <span class="title-line">让每一次评图</span>
-              <span class="title-line">变成</span>
-              <span class="title-line">可追溯的</span>
-              <span class="title-line">结构化反馈。</span>
+              <span class="title-line">围绕真实设计过程</span>
+              <span class="title-line">串联知识与实践</span>
+              <span class="title-line">形成连续反馈</span>
             </h2>
             <p class="section-lede" data-reveal>
-              ArchCritic 把临场、口头、分散的评图过程整理成可检查的工作流：学生知道每条建议来自哪里，教师看见方案演化路径，团队保留每一次设计决策的共同记忆。
+              学生在设计前学习原理、理解案例，在推进中查找方法，在评图后回到具体知识点继续学习；每一轮报告与修改记录共同形成连续的复盘线索。
             </p>
           </div>
           <div class="feature-grid product-feature-grid" id="features" data-reveal>
             <article class="feature-card" data-reveal>
               <div class="feature-icon">01</div>
-              <h3>围绕图纸组织反馈</h3>
-              <p>围绕图纸信息组织反馈，把空间、流线、图面表达和任务要求放在同一个评图上下文里。</p>
+              <h3>知识学习</h3>
+              <p>按主题与层级理解公共建筑设计原理，通过知识测试检查自己的掌握情况。</p>
               <figure class="feature-preview" aria-hidden="true">
-                <img src="figma-page-shots/workflow-upload-drawings.png" alt="" loading="lazy">
+                <img src="product-shots/knowledge-current.png" alt="" loading="lazy">
               </figure>
             </article>
             <article class="feature-card" data-reveal>
               <div class="feature-icon">02</div>
-              <h3>多角色并行审阅</h3>
-              <p>不同 Agent 负责不同审阅视角，避免单一评价口径，让建议更接近真实评图现场。</p>
+              <h3>案例理解</h3>
+              <p>从公共建筑案例中观察场地、功能、流线、空间、形式与结构策略如何落地。</p>
               <figure class="feature-preview" aria-hidden="true">
-                <img src="figma-page-shots/workflow-stage-agents.png" alt="" loading="lazy">
+                <img src="product-shots/knowledge-assistant-current.png" alt="" loading="lazy">
               </figure>
             </article>
             <article class="feature-card" data-reveal>
               <div class="feature-icon">03</div>
-              <h3>版本变化对比</h3>
-              <p>记录每次修改的变化点，让反馈不再停留在“感觉变好了”，而能追踪迭代证据。</p>
+              <h3>设计实践</h3>
+              <p>结合课程任务书、项目阶段和设计图纸，为每一轮方案建立真实评图上下文。</p>
               <figure class="feature-preview" aria-hidden="true">
-                <img src="figma-page-shots/dashboard-projects.png" alt="" loading="lazy">
+                <img src="product-shots/project-info-current.png" alt="" loading="lazy">
               </figure>
             </article>
             <article class="feature-card" data-reveal>
               <div class="feature-icon">04</div>
-              <h3>结构化报告生成</h3>
-              <p>把分散评论整理为清晰报告，帮助学生确认优先级，也方便导师复盘教学过程。</p>
+              <h3>反馈与复盘</h3>
+              <p>通过 AI 评图发现问题、追问原因、查找知识，并在历史版本中回看修改过程。</p>
               <figure class="feature-preview" aria-hidden="true">
-                <img src="figma-page-shots/processing.png" alt="" loading="lazy">
-              </figure>
-            </article>
-          </div>
-          <div class="screen-stack" data-reveal hidden aria-hidden="true">
-            <figure class="screen-frame screen-primary">
-              <img
-                src="figma-page-shots/processing.png"
-                alt="ArchCritic Figma 等待评图页面"
-              />
-            </figure>
-            <figure class="screen-frame screen-secondary">
-              <img
-                src="figma-page-shots/project-info.png"
-                alt="ArchCritic Figma 项目信息页面"
-              />
-            </figure>
-          </div>
-        </div>
-
-        <div class="section-inner legacy-features" hidden aria-hidden="true">
-          <div class="feature-grid">
-            <article class="feature-card" data-reveal>
-              <div class="feature-icon">01</div>
-              <h3>围绕图纸组织反馈</h3>
-              <p>围绕图纸信息组织反馈，把空间、流线、图面表达和任务要求放在同一个评图上下文里。</p>
-              <figure class="feature-preview" aria-hidden="true">
-                <img src="figma-page-shots/workflow-upload-drawings.png" alt="" loading="lazy">
-              </figure>
-            </article>
-            <article class="feature-card" data-reveal>
-              <div class="feature-icon">02</div>
-              <h3>多角色并行审阅</h3>
-              <p>不同 Agent 负责不同审阅视角，避免单一评价口径，让建议更接近真实评图现场。</p>
-              <figure class="feature-preview" aria-hidden="true">
-                <img src="figma-page-shots/workflow-stage-agents.png" alt="" loading="lazy">
-              </figure>
-            </article>
-            <article class="feature-card" data-reveal>
-              <div class="feature-icon">03</div>
-              <h3>版本变化对比</h3>
-              <p>记录每次修改的变化点，让反馈不再停留在“感觉变好了”，而能追踪迭代证据。</p>
-              <figure class="feature-preview" aria-hidden="true">
-                <img src="figma-page-shots/dashboard-projects.png" alt="" loading="lazy">
-              </figure>
-            </article>
-            <article class="feature-card" data-reveal>
-              <div class="feature-icon">04</div>
-              <h3>结构化报告生成</h3>
-              <p>把分散评论整理为清晰报告，帮助学生确认优先级，也方便导师复盘教学过程。</p>
-              <figure class="feature-preview" aria-hidden="true">
-                <img src="figma-page-shots/processing.png" alt="" loading="lazy">
+                <img src="product-shots/report-current.png" alt="" loading="lazy">
               </figure>
             </article>
           </div>
         </div>
       </section>
 
-      <section class="section credibility-page" id="credibility">
-        <div class="section-inner credibility-inner">
-          <div class="credibility-copy">
-            <p class="section-kicker" data-reveal>专业性数据</p>
-            <h2 class="section-title line-title credibility-title" data-reveal>
-              <span class="title-line credibility-title-line">专业可信</span>
-              <span class="title-line credibility-title-line">来自可见的</span>
-              <span class="title-line credibility-title-line">评图数据。</span>
+      <section class="section knowledge-story" id="knowledge-story">
+        <div class="section-inner story-layout">
+          <div class="story-copy">
+            <p class="section-kicker" data-reveal>建筑知识库</p>
+            <h2 class="section-title line-title" data-reveal>
+              <span class="title-line">先建立设计认知</span>
+              <span class="title-line">再进入方案实践</span>
             </h2>
             <p class="section-lede" data-reveal>
-              官网首页可以用可见的数据指标展示 ArchCritic 的专业性：评图规模、证据匹配、维度覆盖和报告生成效率，都应该被清楚呈现。
+              公共建筑设计原理、案例经验与知识测试被组织成可检索、可关联的学习材料，帮助学生带着问题学习，并理解方法如何落地。
             </p>
-            <div class="metric-source" data-reveal>
-              原型阶段基准数据，可在正式上线前替换为真实部署数据。
-            </div>
           </div>
-          <div class="metric-grid" aria-label="ArchCritic 平台可信度数据">
-            <article class="metric-card" data-reveal>
-              <div>
-                <span class="metric-value" data-target="120" data-suffix="+">120+</span>
-                <h3 class="metric-label">已审阅图纸</h3>
-              </div>
-              <p class="metric-copy">Pilot critiques across studio-style design submissions and iterative 再到版本 rounds.</p>
-            </article>
-            <article class="metric-card" data-reveal>
-              <div>
-                <span class="metric-value" data-target="84" data-suffix="%">84%</span>
-                <h3 class="metric-label">证据匹配率</h3>
-              </div>
-              <p class="metric-copy">反馈意见可回链到图纸区域、任务要求或版本变化。</p>
-            </article>
-            <article class="metric-card" data-reveal>
-              <div>
-                <span class="metric-value" data-target="91" data-suffix="%">91%</span>
-                <h3 class="metric-label">评图维度覆盖</h3>
-              </div>
-              <p class="metric-copy">Agent 审阅覆盖空间逻辑、表达质量、场地语境与报告优先级。</p>
-            </article>
-            <article class="metric-card" data-reveal>
-              <div>
-                <span class="metric-value" data-target="6" data-suffix="m">6m</span>
-                <h3 class="metric-label">报告草稿生成</h3>
-              </div>
-              <p class="metric-copy">分散反馈可在数分钟内整理为可追溯的评图报告。</p>
-            </article>
+          <div class="knowledge-metrics" data-reveal aria-label="知识库当前内容数量">
+            <div class="knowledge-metric"><strong>150</strong><span>条知识与案例学习内容</span></div>
+            <div class="knowledge-metric"><strong>100</strong><span>张公共建筑设计知识卡</span></div>
+            <div class="knowledge-metric"><strong>50</strong><span>个公共建筑案例</span></div>
           </div>
         </div>
       </section>
@@ -3033,34 +3831,33 @@
           <div>
             <p class="section-kicker" data-reveal>评图工作流</p>
             <h2 class="section-title line-title" data-reveal>
-              <span class="title-line">从图纸上传</span>
-              <span class="title-line">到多角色审阅</span>
-              <span class="title-line">再沉淀为</span>
-              <span class="title-line">版本记忆。</span>
+              <span class="title-line">填写项目信息</span>
+              <span class="title-line">进入阶段化评图</span>
+              <span class="title-line">反馈进入下一版</span>
             </h2>
             <p class="section-lede" data-reveal>
-              官网首页会把产品价值讲成一个连续动作：上传、等待分析、收到阶段报告、对比历史版本，再进入下一轮设计。
+              填写项目、年级与设计阶段，上传任务书、设计说明和图纸；系统调用对应评审角色，形成可追问、可复盘的结构化报告。
             </p>
             <div class="steps workflow-inline-steps" aria-hidden="true">
               <article class="step" data-reveal>
                 <span class="step-num">01</span>
                 <div>
-                  <h3>上传项目上下文</h3>
-                  <p>输入项目信息、课程任务与图纸，让系统建立这次评图的约束条件。</p>
+                  <h3>填写项目相关信息</h3>
+                  <p>填写项目、年级和设计阶段，上传任务书与设计图纸。</p>
                 </div>
               </article>
               <article class="step" data-reveal>
                 <span class="step-num">02</span>
                 <div>
-                  <h3>运行多角色评图</h3>
-                  <p>多个评图角色并行审阅，输出问题、证据位置与修改方向。</p>
+                  <h3>运行阶段化评审</h3>
+                  <p>专项角色依次分析图纸，再由综合评审汇总结论。</p>
                 </div>
               </article>
               <article class="step" data-reveal>
                 <span class="step-num">03</span>
                 <div>
-                  <h3>对比版本并生成报告</h3>
-                  <p>系统把本轮结果和历史版本放在一起，形成结构化评图报告。</p>
+                  <h3>阅读、追问并修改</h3>
+                  <p>查看知识依据、继续追问、导出报告并进入下一版设计。</p>
                 </div>
               </article>
             </div>
@@ -3068,39 +3865,43 @@
           <div class="flow-panel workflow-carousel" data-reveal aria-label="ArchCritic 使用流程轮播">
             <div class="workflow-carousel-stage">
               <figure class="workflow-slide is-active" data-flow-slide>
-                <img src="figma-page-shots/workflow-project-info.png" alt="ArchCritic 填写项目信息页面" />
+                <img src="product-shots/project-info-current.png" alt="ArchCritic 当前项目信息与任务书页面" />
                 <figcaption>
                   <span class="workflow-slide-index">01</span>
-                  <strong>填写项目信息</strong>
-                  <span>建立评图上下文</span>
+                  <strong>填写项目相关信息</strong>
+                  <span>补充项目、年级、阶段、任务书与设计说明</span>
                 </figcaption>
               </figure>
               <figure class="workflow-slide is-next" data-flow-slide>
-                <img src="figma-page-shots/workflow-upload-drawings.png" alt="ArchCritic 上传设计图纸页面" />
+                <img src="product-shots/agents-current.png" alt="ArchCritic 当前设计阶段与 Agent 页面" />
                 <figcaption>
                   <span class="workflow-slide-index">02</span>
-                  <strong>上传设计图纸</strong>
-                  <span>把图纸与任务要求放进同一轮评审</span>
+                  <strong>选择设计阶段</strong>
+                  <span>系统按概念、方案或图纸阶段启用对应角色</span>
                 </figcaption>
               </figure>
               <figure class="workflow-slide" data-flow-slide>
-                <img src="figma-page-shots/workflow-stage-agents.png" alt="ArchCritic 选择阶段与 Agent 页面" />
+                <img src="product-shots/confirm-current.png" alt="ArchCritic 当前确认提交页面" />
                 <figcaption>
                   <span class="workflow-slide-index">03</span>
-                  <strong>选择阶段与 Agent</strong>
-                  <span>让不同评图视角同时进入现场</span>
+                  <strong>核对并提交评图</strong>
+                  <span>确认本轮项目、图纸与评审角色</span>
                 </figcaption>
               </figure>
               <figure class="workflow-slide is-prev" data-flow-slide>
-                <img src="figma-page-shots/workflow-confirm.png" alt="ArchCritic 确认提交页面" />
+                <img src="product-shots/report-current.png" alt="ArchCritic 当前完整评图报告页面" />
                 <figcaption>
                   <span class="workflow-slide-index">04</span>
-                  <strong>确认提交</strong>
-                  <span>生成可追踪的评图任务</span>
+                  <strong>阅读并继续追问</strong>
+                  <span>从专项反馈、知识依据与历史版本进入下一轮修改</span>
                 </figcaption>
               </figure>
             </div>
             <div class="workflow-carousel-control">
+              <div class="workflow-caption-display" data-flow-caption aria-live="polite">
+                <strong>填写项目相关信息</strong>
+                <span>补充项目、年级、阶段、任务书与设计说明</span>
+              </div>
               <div class="workflow-counter" aria-label="流程页码：第 1 页，共 4 页" data-flow-counter>
                 <span class="workflow-counter-current" aria-hidden="true">
                   <span class="workflow-counter-strip" data-flow-current>
@@ -3128,75 +3929,73 @@
         <div class="section-inner">
           <p class="section-kicker" data-reveal>智能体系统</p>
           <h2 class="section-title line-title" data-reveal>
-            <span class="title-line">四个评图角色，</span>
-            <span class="title-line">沉淀一份</span>
-            <span class="title-line">共享设计记忆。</span>
+            <span class="title-line">七大评审 Agent 按设计阶段参与评图</span>
           </h2>
           <p class="section-lede" data-reveal>
-            首页中的 Agent 不是装饰，而是解释产品机制：它们代表不同评图视角，帮助用户理解 ArchCritic 为什么比普通聊天式反馈更稳定。
+            不同评审 Agent 分别关注功能流线、图面表达、场地回应、结构与设计概念，并由综合评审汇总问题优先级，形成面向当前设计阶段的协同反馈。
           </p>
         </div>
         <div class="agent-gallery" id="agent-roles" aria-label="ArchCritic agent roles">
           <article class="agent-card" data-reveal>
-            <span class="agent-tag">逻辑</span>
-            <h3>平面逻辑评审</h3>
-            <p>检查空间组织、动线和功能关系。</p>
+            <span class="agent-tag">功能</span>
+            <h3>功能与流线 Agent</h3>
+            <p>检查空间组织、功能关系、公众与后勤流线，以及主要使用路径是否清晰。</p>
             <video
               data-agent-video
               muted
               loop
               playsinline
               preload="metadata"
-              poster="Agent%20形象/PNG/cropped/ArchCritic_agent_1_transparent_cropped.png"
-              aria-label="ArchCritic 平面逻辑评审 agent 动态演示"
+              poster="../assets/v1/agent-flow.png"
+              aria-label="ArchCritic 功能与流线 Agent 动态演示"
             >
               <source src="Agent%20形象/Video/01.mp4" type="video/mp4" />
             </video>
           </article>
           <article class="agent-card" data-reveal>
             <span class="agent-tag">表达</span>
-            <h3>表达质量评审</h3>
-            <p>审阅图面层次、表现力与叙事顺序。</p>
+            <h3>图面表达 Agent</h3>
+            <p>检查图纸完整度、信息层级、标注排版和整体阅读效率。</p>
             <video
               data-agent-video
               muted
               loop
               playsinline
               preload="metadata"
-              poster="Agent%20形象/PNG/cropped/ArchCritic_agent_2_transparent_cropped.png"
-              aria-label="ArchCritic 表达质量评审 agent 动态演示"
+              poster="../assets/v1/agent-drawing.png"
+              aria-label="ArchCritic 图面表达 Agent 动态演示"
             >
               <source src="Agent%20形象/Video/02.mp4" type="video/mp4" />
             </video>
           </article>
           <article class="agent-card" data-reveal>
-            <span class="agent-tag">上下文</span>
-            <h3>场地关系评审</h3>
-            <p>追问场地回应、尺度关系和环境逻辑。</p>
+            <span class="agent-tag">场地</span>
+            <h3>场地 Agent</h3>
+            <p>分析基地条件、交通组织、城市界面，以及建筑对周边环境的回应。</p>
             <video
               data-agent-video
               muted
               loop
               playsinline
               preload="metadata"
-              poster="Agent%20形象/PNG/cropped/ArchCritic_agent_3_transparent_cropped.png"
-              aria-label="ArchCritic 场地关系评审 agent 动态演示"
+              poster="../assets/v1/agent-site.png"
+              aria-label="ArchCritic 场地 Agent 动态演示"
             >
               <source src="Agent%20形象/Video/03.mp4" type="video/mp4" />
             </video>
           </article>
           <article class="agent-card" data-reveal>
-            <span class="agent-tag">报告</span>
-            <h3>反馈整理评审</h3>
-            <p>把多方意见压缩为可执行的修改清单。</p>
+            <span class="agent-tag">综合</span>
+            <h3>综合评审 Agent</h3>
+            <p>汇总各专项角色的观察与评分，梳理问题优先级并形成完整反馈报告。</p>
             <video
               data-agent-video
               muted
               loop
               playsinline
               preload="metadata"
-              poster="Agent%20形象/PNG/cropped/ArchCritic_agent_4_transparent_cropped.png"
-              aria-label="ArchCritic 反馈整理评审 agent 动态演示"
+              poster="../assets/v1/agent-review.png"
+              aria-label="ArchCritic 综合评审 Agent 动态演示"
             >
               <source src="Agent%20形象/Video/04.mp4" type="video/mp4" />
             </video>
@@ -3204,60 +4003,51 @@
         </div>
       </section>
 
-      <section class="site-info" id="site-info" aria-label="站点信息">
+      <section class="site-info compact-site-info" id="site-info" aria-label="站点信息">
         <div class="site-info-header">
           <div>
             <p class="site-info-kicker">了解更多 ArchCritic</p>
-            <h2 class="site-info-title">继续了解产品、文档与服务支持。</h2>
+            <h2 class="site-info-title">从知识学习开始，进入你的下一轮设计</h2>
           </div>
-          <p class="site-info-note">
-            这里预留官网正式上线后的底部信息入口，用于承载法律条款、帮助文档、软件下载、商务沟通与官方内容渠道。
-          </p>
         </div>
         <div class="site-info-grid">
-          <section class="site-info-panel" aria-labelledby="terms-title">
-            <h3 id="terms-title">服务条款</h3>
-            <a href="#site-info">用户协议</a>
-            <a href="#site-info">隐私政策</a>
-            <a href="#site-info">数据安全说明</a>
-            <a href="#site-info">AI 生成内容声明</a>
+          <section class="site-info-panel" aria-labelledby="start-title">
+            <h3 id="start-title">开始使用</h3>
+            <a href="/#/dashboard" target="_parent">进入工作台</a>
+            <a href="/#/knowledge" target="_parent">浏览知识库</a>
           </section>
           <section class="site-info-panel" aria-labelledby="docs-title">
-            <h3 id="docs-title">文档指引</h3>
-            <a href="#workflow">快速开始</a>
-            <a href="#agents">Agent 评图角色</a>
-            <a href="#credibility">评图指标说明</a>
-            <a href="#workflow">教学场景流程</a>
+            <h3 id="docs-title">了解平台</h3>
+            <a href="#teaching-loop">教学闭环</a>
+            <a href="#knowledge-story">知识与案例</a>
+            <a href="#workflow">评图流程</a>
+            <a href="#agents">智能体</a>
           </section>
-          <section class="site-info-panel" aria-labelledby="download-title">
-            <h3 id="download-title">产品下载</h3>
-            <a href="#site-info">Web 控制台</a>
-            <a href="#site-info">桌面端内测</a>
-            <a href="#site-info">教师端工具包</a>
-            <a href="#site-info">演示素材下载</a>
+          <section class="site-info-panel" aria-labelledby="boundary-title">
+            <h3 id="boundary-title">AI 使用说明</h3>
+            <span>AI 生成内容可能存在错误、遗漏或不准确，请结合图纸、知识依据与专业教学意见核验</span>
           </section>
-          <section class="site-info-panel" aria-labelledby="contact-title">
-            <h3 id="contact-title">联系我们</h3>
-            <span>合作咨询：hello@archcritic.ai</span>
-            <span>教学试点：studio@archcritic.ai</span>
-            <span>工作日 10:00-18:00</span>
-            <a href="#demo">预约产品演示</a>
+          <section class="site-info-panel" aria-labelledby="author-title">
+            <h3 id="author-title">作者信息</h3>
+            <span class="author-line">ArchSpark Lab｜筑火实验室</span>
+            <a href="mailto:1611914241@qq.com">1611914241@qq.com</a>
           </section>
-          <section class="site-info-panel" aria-labelledby="wechat-title">
-            <h3 id="wechat-title">官方公众号</h3>
-            <div class="qr-placeholder" aria-hidden="true"></div>
-            <span>扫码关注 ArchCritic</span>
-            <span>获取评图案例、产品更新与教学实践文章。</span>
+          <section class="site-info-panel" aria-labelledby="thanks-title">
+            <h3 id="thanks-title">致谢</h3>
+            <span>感谢所有开发团队成员的付出与贡献，感谢齐奕老师在项目开发过程中的倾力帮助与悉心指导；也感谢每一位为项目建设贡献力量、提出宝贵意见的朋友</span>
           </section>
         </div>
       </section>
     </main>
 
     <footer class="footer">
-      <span>ArchCritic 中文官网首页</span>
-      <span>AI 辅助建筑评图系统</span>
+      <span>ArchCritic 公共建筑设计教学辅助平台</span>
+      <span>知识学习 · 案例理解 · 设计实践 · 反馈复盘</span>
     </footer>
   </div>
+  <button class="page-prev-button" type="button" aria-label="切换到上一页">
+    <span class="page-next-icon" aria-hidden="true"></span>
+  </button>
   <button class="page-next-button" type="button" aria-label="切换到下一页">
     <span class="page-next-icon" aria-hidden="true"></span>
   </button>
@@ -3862,10 +4652,10 @@
           section.style.zIndex = String(Math.round(focus * 100) + index);
 
           const textElements = Array.from(section.querySelectorAll(
-            ".section-kicker, .section-title, .section-lede, .quote, .cta-title, .cta-copy"
+            ".section-kicker, .section-title, .section-lede, .quote, .cta-title, .cta-copy, .knowledge-facts, .assistant-path, .agent-extra-roles"
           ));
           const visualElements = Array.from(section.querySelectorAll(
-            ".screen-stack, .flow-panel, .hero-actions"
+            ".screen-stack, .flow-panel, .hero-actions, .loop-orbit, .story-media, .assistant-screens"
           ));
           const cards = Array.from(section.querySelectorAll(".feature-card, .metric-card, .step, .agent-card"))
             .filter((card) => !card.closest(".legacy-features"));
@@ -4082,30 +4872,105 @@
       update();
     }
 
-    function initPageNextButton() {
-      const button = document.querySelector(".page-next-button");
-      const pageSelectors = ["#demo", "#hero", "#product", "#features", "#credibility", "#workflow", "#agents", "#agent-roles", "#site-info"];
+    function initOverlayScrollbar() {
+      const scrollbar = document.querySelector(".overlay-scrollbar");
+      const thumb = scrollbar?.querySelector(".overlay-scrollbar-thumb");
+      if (!scrollbar || !thumb) return;
+
+      let hideTimer = 0;
+      let dragging = false;
+      let dragStartY = 0;
+      let dragStartScrollY = 0;
+
+      function metrics() {
+        const scrollHeight = document.documentElement.scrollHeight;
+        const viewportHeight = window.innerHeight;
+        const trackHeight = scrollbar.clientHeight;
+        const maxScroll = Math.max(0, scrollHeight - viewportHeight);
+        const thumbHeight = Math.max(48, trackHeight * Math.min(1, viewportHeight / scrollHeight));
+        const maxThumbTop = Math.max(0, trackHeight - thumbHeight);
+        return { maxScroll, thumbHeight, maxThumbTop };
+      }
+
+      function update() {
+        const { maxScroll, thumbHeight, maxThumbTop } = metrics();
+        const progress = maxScroll > 0 ? window.scrollY / maxScroll : 0;
+        thumb.style.height = `${thumbHeight}px`;
+        thumb.style.transform = `translate3d(0, ${(maxThumbTop * progress).toFixed(2)}px, 0)`;
+        scrollbar.setAttribute("aria-valuenow", String(Math.round(progress * 100)));
+      }
+
+      function show() {
+        window.clearTimeout(hideTimer);
+        scrollbar.classList.add("is-visible");
+      }
+
+      function hideLater() {
+        window.clearTimeout(hideTimer);
+        hideTimer = window.setTimeout(() => {
+          if (!dragging && !scrollbar.matches(":hover")) scrollbar.classList.remove("is-visible");
+        }, 900);
+      }
+
+      window.addEventListener("scroll", () => {
+        show();
+        update();
+        hideLater();
+      }, { passive: true });
+      window.addEventListener("resize", update);
+      scrollbar.addEventListener("pointerenter", show);
+      scrollbar.addEventListener("pointerleave", hideLater);
+
+      scrollbar.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        const { maxScroll, thumbHeight } = metrics();
+        if (event.target !== thumb) {
+          const rect = scrollbar.getBoundingClientRect();
+          const progress = (event.clientY - rect.top - thumbHeight / 2) / Math.max(1, rect.height - thumbHeight);
+          window.scrollTo({ top: Math.max(0, Math.min(maxScroll, progress * maxScroll)), behavior: "instant" });
+          update();
+        }
+        dragging = true;
+        dragStartY = event.clientY;
+        dragStartScrollY = window.scrollY;
+        scrollbar.classList.add("is-dragging", "is-visible");
+      });
+
+      document.addEventListener("pointermove", (event) => {
+        if (!dragging) return;
+        const { maxScroll, maxThumbTop } = metrics();
+        const deltaY = event.clientY - dragStartY;
+        const nextScrollY = dragStartScrollY + (maxThumbTop > 0 ? deltaY / maxThumbTop * maxScroll : 0);
+        window.scrollTo({ top: Math.max(0, Math.min(maxScroll, nextScrollY)), behavior: "instant" });
+      });
+
+      function stopDragging() {
+        if (!dragging) return;
+        dragging = false;
+        scrollbar.classList.remove("is-dragging");
+        hideLater();
+      }
+
+      document.addEventListener("pointerup", stopDragging);
+      document.addEventListener("pointercancel", stopDragging);
+
+      update();
+    }
+
+    function initPageNavigation() {
+      const nextButton = document.querySelector(".page-next-button");
+      const prevButton = document.querySelector(".page-prev-button");
+      const pageSelectors = ["#demo", "#hero", "#teaching-loop", "#product", "#knowledge-story", "#workflow", "#agents", "#site-info"];
       const pages = pageSelectors
         .map((selector) => document.querySelector(selector))
         .filter(Boolean);
 
-      if (!button || pages.length < 2) {
+      if (!nextButton || !prevButton || pages.length < 2) {
         return;
       }
 
       let currentIndex = 0;
       let ticking = false;
-
-      function lockButtonVisibility() {
-        button.hidden = false;
-        button.classList.remove("is-hidden");
-        button.style.setProperty("display", "grid", "important");
-        button.style.setProperty("visibility", "visible", "important");
-        button.style.setProperty("opacity", "1", "important");
-        button.style.setProperty("pointer-events", "auto", "important");
-        button.style.setProperty("position", "fixed", "important");
-        button.style.setProperty("z-index", "999", "important");
-      }
 
       function getPageTop(page) {
         return page.getBoundingClientRect().top + window.scrollY;
@@ -4119,26 +4984,13 @@
 
       function getTargetTop(page) {
         const pageTop = getPageTop(page);
-        if (page.id === "credibility") {
-          return Math.max(0, pageTop + 1);
-        }
-
-        if (page.id === "features" || page.id === "agent-roles") {
-          return Math.max(0, pageTop - Math.max(0, (window.innerHeight - page.offsetHeight) * 0.5));
-        }
-
-        if (page.id === "agents") {
-          return Math.max(0, pageTop + window.innerHeight * 0.16);
-        }
-
         if (page.id === "demo") {
           return Math.max(0, pageTop + window.innerHeight * 0.16);
         }
-
-        return Math.max(0, pageTop + 1);
+        return Math.max(0, pageTop);
       }
 
-      function smoothScrollTo(targetTop, duration = 260) {
+      function smoothScrollTo(targetTop, duration = 620) {
         if (reduceMotion) {
           window.scrollTo({ top: targetTop, behavior: "auto" });
           return;
@@ -4153,10 +5005,13 @@
           const eased = progress < 0.5
             ? 4 * progress * progress * progress
             : 1 - Math.pow(-2 * progress + 2, 3) / 2;
-          window.scrollTo(0, startTop + distance * eased);
+          window.scrollTo({ top: startTop + distance * eased, behavior: "instant" });
 
           if (progress < 1) {
             window.requestAnimationFrame(step);
+          } else {
+            window.scrollTo({ top: targetTop, behavior: "instant" });
+            requestUpdate();
           }
         }
 
@@ -4164,11 +5019,13 @@
       }
 
       function getCurrentIndex() {
-        const anchorY = window.scrollY + window.innerHeight * 0.32;
         let bestIndex = 0;
+        let bestDistance = Number.POSITIVE_INFINITY;
 
         pages.forEach((page, index) => {
-          if (getTargetTop(page) <= anchorY) {
+          const distance = Math.abs(getTargetTop(page) - window.scrollY);
+          if (distance < bestDistance) {
+            bestDistance = distance;
             bestIndex = index;
           }
         });
@@ -4178,12 +5035,16 @@
 
       function update() {
         currentIndex = getCurrentIndex();
-        const target = pages[(currentIndex + 1) % pages.length];
-        const isLastPage = currentIndex === pages.length - 1;
-        lockButtonVisibility();
-        button.classList.toggle("is-last", isLastPage);
-        button.dataset.target = target.id;
-        button.setAttribute("aria-label", isLastPage ? "回到第一页" : `切换到 ${target.id} 页面`);
+        const nextPage = pages[Math.min(currentIndex + 1, pages.length - 1)];
+        const prevPage = pages[Math.max(currentIndex - 1, 0)];
+        nextButton.hidden = currentIndex === pages.length - 1;
+        prevButton.hidden = currentIndex === 0;
+        nextButton.classList.toggle("is-solo", currentIndex === 0);
+        prevButton.classList.toggle("is-solo", currentIndex === pages.length - 1);
+        nextButton.dataset.target = nextPage.id;
+        prevButton.dataset.target = prevPage.id;
+        nextButton.setAttribute("aria-label", `切换到 ${nextPage.id} 页面`);
+        prevButton.setAttribute("aria-label", `切换到 ${prevPage.id} 页面`);
         ticking = false;
       }
 
@@ -4194,10 +5055,9 @@
         }
       }
 
-      button.addEventListener("click", (event) => {
-        lockButtonVisibility();
+      nextButton.addEventListener("click", (event) => {
         currentIndex = getCurrentIndex();
-        const nextPage = pages[(currentIndex + 1) % pages.length];
+        const nextPage = pages[currentIndex + 1];
         if (!nextPage) {
           return;
         }
@@ -4208,6 +5068,15 @@
         if (history.pushState) {
           history.pushState(null, "", `#${nextPage.id}`);
         }
+      });
+
+      prevButton.addEventListener("click", (event) => {
+        currentIndex = getCurrentIndex();
+        const prevPage = pages[currentIndex - 1];
+        if (!prevPage) return;
+        event.preventDefault();
+        smoothScrollTo(getTargetTop(prevPage));
+        if (history.pushState) history.pushState(null, "", `#${prevPage.id}`);
       });
 
       window.addEventListener("scroll", requestUpdate, { passive: true });
@@ -4224,6 +5093,7 @@
       const slides = Array.from(carousel.querySelectorAll("[data-flow-slide]"));
       const counter = carousel.querySelector("[data-flow-counter]");
       const currentStrip = carousel.querySelector("[data-flow-current]");
+      const caption = carousel.querySelector("[data-flow-caption]");
 
       if (slides.length < 2) {
         return;
@@ -4259,6 +5129,13 @@
         if (counter) {
           counter.setAttribute("aria-label", `流程页码：第 ${activeIndex + 1} 页，共 ${slides.length} 页`);
         }
+        if (caption) {
+          const sourceCaption = slides[activeIndex].querySelector("figcaption");
+          const title = sourceCaption?.querySelector("strong")?.textContent || "";
+          const detail = sourceCaption?.querySelector("strong + span")?.textContent || "";
+          caption.querySelector("strong").textContent = title;
+          caption.querySelector("span").textContent = detail;
+        }
       }
 
       function stop() {
@@ -4273,7 +5150,7 @@
         if (!isInView || isPausedByUser || reduceMotion) {
           return;
         }
-        timer = window.setInterval(() => render(activeIndex + 1), 1200);
+        timer = window.setInterval(() => render(activeIndex + 1), 4200);
       }
 
       carousel.addEventListener("mouseenter", () => {
@@ -4661,10 +5538,10 @@
       word.dataset.text = word.textContent;
     });
 
-    initCustomCursor();
     initFirstScreenThemeState();
+    initOverlayScrollbar();
     initTopbarAutoHide();
-    initPageNextButton();
+    initPageNavigation();
     initHeroCardSwap();
     initWorkflowCarousel();
     initAgentVideos();

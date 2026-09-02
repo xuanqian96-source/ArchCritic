@@ -7,10 +7,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-from app.agents.image_payload import build_model_image_data_url
-from app.config import get_settings
-
-
 BAND_ORDER = {"low": 0, "middle": 1, "high": 2}
 BAND_SCORE_RANGES = {
     "low": (0, 75),
@@ -87,12 +83,6 @@ def build_visual_anchor_context(
         image_path = resolve_anchor_image(root, str(item["image_path"]))
         model_file_url = upload_cache.get(str(image_path), "")
         mime_type = str(item.get("mime_type") or "image/jpeg")
-        if not model_file_url and provider in {"openai", "gemini"}:
-            model_file_url = build_model_image_data_url(
-                image_path,
-                mime_type,
-                get_settings().llm_image_max_side,
-            )
         anchors.append(
             {
                 "anchor_id": str(item["anchor_id"]),

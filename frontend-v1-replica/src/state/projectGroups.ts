@@ -1,5 +1,5 @@
 // 项目分组状态：把同名项目按时间归并为一个项目，并统一提供侧栏和首页所需版本信息。
-import { getProjectHistory, listProjectSubmissions } from "../api/projects";
+import { getProjectOverview } from "../api/projects";
 import type { Project, Submission, SubmissionHistory } from "../types/api";
 
 export interface ProjectVersion {
@@ -203,13 +203,7 @@ export function loadProjectGroups(projects: Project[]) {
 
   const groups = createBaseGroups(projects);
   pendingSignature = signature;
-  pendingRequest = Promise.all(projects.map(async (project) => {
-    const [submissions, history] = await Promise.all([
-      listProjectSubmissions(project.id).catch(() => []),
-      getProjectHistory(project.id).catch(() => []),
-    ]);
-    return { project, submissions, history };
-  })).then((items) => {
+  pendingRequest = getProjectOverview().then((items) => {
     const details = new Map(items.map((item) => [item.project.id, item]));
     groups.forEach((group) => {
       const versions = group.projects.flatMap((project) => {

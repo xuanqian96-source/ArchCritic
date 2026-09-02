@@ -1,9 +1,11 @@
 """提供知识库浏览、建筑知识助手会话和缩略图接口。"""
 
 import asyncio
+import json
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -12,12 +14,13 @@ from app.database import get_db
 from app.knowledge_assistant_schemas import (
     KnowledgeAssistantChatCreate,
     KnowledgeAssistantChatRead,
+    KnowledgeConversationRead,
     KnowledgeAssistantMessageRead,
 )
 from app.models import KnowledgeAssistantMessage, KnowledgeConversation, User
 from app.services.auth import get_current_user
 from app.services.knowledge_assistant import KnowledgeAssistantModelError, generate_knowledge_answer
-from app.services.knowledge_library import build_library_payload, get_library_item, render_library_thumbnail
+from app.services.knowledge_library import build_knowledge_quiz, build_library_payload, get_library_item, render_library_thumbnail
 
 
 router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
@@ -27,6 +30,12 @@ router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
 async def list_knowledge_library(_: User = Depends(get_current_user)) -> dict:
     """返回学习浏览页所需的知识卡和案例卡目录。"""
     return build_library_payload(get_settings().wiki_dir)
+
+
+@router.get("/quiz")
+async def list_knowledge_quiz(_: User = Depends(get_current_user)) -> dict:
+    """返回从现有知识卡自测内容整理出的题库。"""
+    return build_knowledge_quiz(get_settings().wiki_dir)
 
 
 def _get_owned_conversation(
@@ -108,6 +117,96 @@ async def chat_with_knowledge_assistant(
     ))
     db.commit()
     return result
+
+
+@router.post("/assistant/chat/stream")
+async def stream_knowledge_assistant(
+    payload: KnowledgeAssistantChatCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    """流式返回回答文字，结束时附带经过校验的完整推荐结果。"""
+    conversation = _get_owned_conversation(db, payload.conversation_id, user, create=True, selected_tool=payload.tool)
+    history_rows = list(db.execute(
+        select(KnowledgeAssistantMessage)
+        .where(KnowledgeAssistantMessage.conversation_id == conversation.id)
+        .order_by(KnowledgeAssistantMessage.id.desc()).limit(20)
+    ).scalars().all())
+    history = [{"role": row.role, "content": row.content} for row in reversed(history_rows) if row.role in {"user", "assistant"}]
+    conversation.selected_tool = payload.tool
+    db.add(KnowledgeAssistantMessage(conversation_id=conversation.id, role="user", content=payload.message.strip(), tool=payload.tool))
+    db.commit()
+
+    async def event_stream():
+        queue: asyncio.Queue[tuple[str, object]] = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+
+        def emit_delta(value: str) -> None:
+            loop.call_soon_threadsafe(queue.put_nowait, ("delta", value))
+
+        async def run_model() -> None:
+            try:
+                settings = get_settings()
+                result = await asyncio.to_thread(
+                    generate_knowledge_answer, payload.tool, payload.message.strip(),
+                    payload.context.model_dump(), history, settings.wiki_dir, emit_delta,
+                )
+                await queue.put(("final", result))
+            except KnowledgeAssistantModelError as exc:
+                await queue.put(("error", str(exc)))
+            except Exception:
+                await queue.put(("error", "AI 助手调用失败，请稍后重试。"))
+
+        task = asyncio.create_task(run_model())
+        try:
+            while True:
+                event, data = await queue.get()
+                if event == "final":
+                    result = data if isinstance(data, dict) else {}
+                    db.add(KnowledgeAssistantMessage(
+                        conversation_id=conversation.id, role="assistant",
+                        content=str(result.get("answer", "")), tool=payload.tool, result=result,
+                    ))
+                    db.commit()
+                yield f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+                if event in {"final", "error"}:
+                    break
+        finally:
+            if not task.done():
+                task.cancel()
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@router.get("/assistant/conversations", response_model=list[KnowledgeConversationRead])
+async def list_knowledge_assistant_conversations(
+    query: str = Query(default="", max_length=100),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[dict]:
+    """返回当前账户的历史会话，支持按首条问题搜索。"""
+    conversations = list(db.execute(
+        select(KnowledgeConversation).where(KnowledgeConversation.user_id == user.id)
+        .order_by(KnowledgeConversation.updated_at.desc()).limit(50)
+    ).scalars().all())
+    results = []
+    normalized_query = query.strip().lower()
+    for conversation in conversations:
+        messages = list(db.execute(
+            select(KnowledgeAssistantMessage).where(KnowledgeAssistantMessage.conversation_id == conversation.id)
+            .order_by(KnowledgeAssistantMessage.id.asc())
+        ).scalars().all())
+        first_user = next((item.content for item in messages if item.role == "user"), "新会话")
+        if normalized_query and normalized_query not in first_user.lower():
+            continue
+        results.append({
+            "id": conversation.id,
+            "title": first_user[:36],
+            "selected_tool": conversation.selected_tool,
+            "message_count": len(messages),
+            "updated_at": conversation.updated_at or conversation.created_at,
+        })
+    return results
 
 
 @router.get(

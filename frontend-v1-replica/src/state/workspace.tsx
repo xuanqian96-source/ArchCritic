@@ -1,13 +1,12 @@
 // 工作区状态：协调项目草稿、图纸、任务书、评图过程和报告。
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from "react";
 import { checkHealth } from "../api/client";
-import { listDrawings } from "../api/files";
 import { cloneProject, createProject, getProject, getProjectHistory, listProjects, listProjectSubmissions, updateProject } from "../api/projects";
-import { downloadReport, getReport, listChatMessages, sendChat } from "../api/reports";
-import { cancelEvaluation, createSubmission, evaluateStream, getSubmission, listAttachments, updateSubmission } from "../api/submissions";
+import { downloadReport, listChatMessages, streamChat } from "../api/reports";
+import { cancelEvaluation, createSubmission, evaluateStream, getSubmissionWorkspace, updateSubmission } from "../api/submissions";
 import type { Attachment, ChatMessage, DrawingFile, OverallReport, Project, Submission, SubmissionHistory } from "../types/api";
 import { useAuth } from "./auth";
-import { applyEvaluationEvent, cleanSavedDescription, DEFAULT_DRAFT, DUPLICATE_PROJECT_NAME_MESSAGE, EMPTY_EVALUATION, type DraftValues, type EvaluationStatus, getLastSubmissionKey, LAST_SUBMISSION_KEY, normalizeProjectNameForCompare, normalizeSavedModel, type SubmissionPreload, type SubmissionSnapshot, type WorkspaceState, waitForChatFrame, WorkspaceContext } from "./workspaceShared";
+import { applyEvaluationEvent, cleanSavedDescription, DEFAULT_DRAFT, DUPLICATE_PROJECT_NAME_MESSAGE, EMPTY_EVALUATION, type DraftValues, type EvaluationStatus, getLastSubmissionKey, LAST_SUBMISSION_KEY, normalizeProjectNameForCompare, normalizeSavedModel, type SubmissionPreload, type SubmissionSnapshot, type WorkspaceState, WorkspaceContext } from "./workspaceShared";
 import { useWorkspaceFileActions } from "./workspaceFileActions";
 
 export function WorkspaceProvider({ children }: PropsWithChildren) {
@@ -29,6 +28,7 @@ export function WorkspaceProvider({ children }: PropsWithChildren) {
   const evaluationRequestRef = useRef(0);
   const pauseRequestedRef = useRef(false);
   const submissionCacheRef = useRef(new Map<number, SubmissionSnapshot | Promise<SubmissionSnapshot>>());
+  const submissionCacheVersionRef = useRef(new Map<number, number>());
   const draftRef = useRef(draft);
   const projectRef = useRef(project);
   const submissionRef = useRef(submission);
@@ -51,7 +51,34 @@ export function WorkspaceProvider({ children }: PropsWithChildren) {
   // 当前提交内容变化后清掉详情缓存，避免从首页回来时看到旧图纸或旧附件。
   const invalidateSubmissionCache = useCallback((submissionId?: number | null) => {
     if (!submissionId) return;
+    submissionCacheVersionRef.current.set(
+      submissionId,
+      (submissionCacheVersionRef.current.get(submissionId) ?? 0) + 1,
+    );
     submissionCacheRef.current.delete(submissionId);
+  }, []);
+
+  // 把刚发送的报告问题同步写入已有快照，切页时不会被旧缓存覆盖。
+  const appendCachedChatMessage = useCallback((submissionId: number, message: ChatMessage) => {
+    const appendIfMissing = (messages: ChatMessage[]) => {
+      const last = messages[messages.length - 1];
+      return last?.role === message.role && last.content === message.content && last.tool === message.tool
+        ? messages
+        : [...messages, message];
+    };
+    const cached = submissionCacheRef.current.get(submissionId);
+    if (!cached) return;
+    if (cached instanceof Promise) {
+      submissionCacheRef.current.set(submissionId, cached.then((snapshot) => ({
+        ...snapshot,
+        chatMessages: appendIfMissing(snapshot.chatMessages),
+      })));
+      return;
+    }
+    submissionCacheRef.current.set(submissionId, {
+      ...cached,
+      chatMessages: appendIfMissing(cached.chatMessages),
+    });
   }, []);
 
   // 更新单个草稿字段。
@@ -98,31 +125,25 @@ export function WorkspaceProvider({ children }: PropsWithChildren) {
   const getSubmissionSnapshot = useCallback((submissionId: number, preload?: SubmissionPreload): Promise<SubmissionSnapshot> => {
     const cached = submissionCacheRef.current.get(submissionId);
     if (cached) return Promise.resolve(cached);
-    const request = (async () => {
-      const savedSubmission = preload?.submission ?? await getSubmission(submissionId);
-      const savedProject = preload?.project ?? await getProject(savedSubmission.project_id);
-      const [savedDrawings, savedAttachments, savedHistory, savedReport, savedChatMessages] = await Promise.all([
-        listDrawings(submissionId),
-        listAttachments(submissionId).catch(() => []),
-        getProjectHistory(savedProject.id),
-        getReport(submissionId).catch(() => null),
-        listChatMessages(submissionId).catch(() => []),
-      ]);
-      return {
-        project: savedProject,
-        submission: savedSubmission,
-        drawings: savedDrawings,
-        attachments: savedAttachments,
-        history: savedHistory,
-        report: savedReport,
-        chatMessages: savedChatMessages,
-      };
-    })();
+    const cacheVersion = submissionCacheVersionRef.current.get(submissionId) ?? 0;
+    const request = getSubmissionWorkspace(submissionId).then((snapshot) => ({
+      project: snapshot.project,
+      submission: snapshot.submission,
+      drawings: snapshot.drawings,
+      attachments: snapshot.attachments,
+      history: snapshot.history,
+      report: snapshot.report,
+      chatMessages: snapshot.chat_messages,
+    }));
     submissionCacheRef.current.set(submissionId, request);
     request.then((snapshot) => {
-      submissionCacheRef.current.set(submissionId, snapshot);
+      if ((submissionCacheVersionRef.current.get(submissionId) ?? 0) === cacheVersion) {
+        submissionCacheRef.current.set(submissionId, snapshot);
+      }
     }).catch(() => {
-      submissionCacheRef.current.delete(submissionId);
+      if ((submissionCacheVersionRef.current.get(submissionId) ?? 0) === cacheVersion) {
+        submissionCacheRef.current.delete(submissionId);
+      }
     });
     return request;
   }, []);
@@ -360,7 +381,9 @@ export function WorkspaceProvider({ children }: PropsWithChildren) {
         setEvaluation((current) => applyEvaluationEvent(current, event));
         if (!pauseRequestedRef.current && event.event === "final") {
           finalReceived = true;
+          invalidateSubmissionCache(savedSubmission.id);
           setReport(event.payload.report as unknown as OverallReport);
+          setSubmission((current) => current?.id === savedSubmission.id ? { ...current, status: "completed" } : current);
           setEvaluation((current) => ({
             ...current,
             running: false,
@@ -403,7 +426,7 @@ export function WorkspaceProvider({ children }: PropsWithChildren) {
       }));
       setNotice(message);
     }
-  }, [draft.modelName, draft.modelProvider, saveDraft]);
+  }, [draft.modelName, draft.modelProvider, invalidateSubmissionCache, saveDraft]);
 
   // 暂停当前评图任务。
   const pauseEvaluation = useCallback(async () => {
@@ -431,23 +454,38 @@ export function WorkspaceProvider({ children }: PropsWithChildren) {
   }, [submission]);
 
   // 发送报告追问并同步右侧对话区。
-  const sendQuestion = useCallback(async (content: string) => {
+  const sendQuestion = useCallback(async (content: string, tool: ChatMessage["tool"] = "none", signal?: AbortSignal, onDelta?: (text: string) => void) => {
     if (!submission || !content.trim()) return;
-    const question: ChatMessage = { role: "user", content: content.trim() };
+    const submissionId = submission.id;
+    const question: ChatMessage = { role: "user", content: content.trim(), tool };
     setChatMessages((current) => [...current, question]);
-    const answer = await sendChat(submission.id, question.content, draft.modelProvider, draft.modelName);
-    setChatMessages((current) => [...current, { role: "assistant", content: "" }]);
-    for (let index = 1; index <= answer.content.length; index += 1) {
-      const nextContent = answer.content.slice(0, index);
-      setChatMessages((current) => current.map((item, itemIndex) => (
-        itemIndex === current.length - 1 ? { ...answer, content: nextContent } : item
-      )));
-      if (index % 3 === 0) await waitForChatFrame();
+    appendCachedChatMessage(submissionId, question);
+    let answer: ChatMessage;
+    try {
+      answer = await streamChat(submissionId, question.content, tool, onDelta ?? (() => undefined), signal);
+    } catch {
+      if (signal?.aborted) return;
+      // 问题已先保存到后端；请求中断时保留等待态，由报告页轮询补回后台回答。
+      const saved = await listChatMessages(submissionId).catch(() => []);
+      if (saved.length > 0 && saved[saved.length - 1]?.role === "assistant") setChatMessages(saved);
+      return;
     }
-    setChatMessages((current) => current.map((item, itemIndex) => (
-      itemIndex === current.length - 1 ? answer : item
-    )));
-  }, [draft.modelName, draft.modelProvider, submission]);
+    if (signal?.aborted) return;
+    setChatMessages((current) => [...current, answer]);
+    if (answer.updated_report) {
+      setReport(answer.updated_report);
+    }
+    invalidateSubmissionCache(submissionId);
+  }, [appendCachedChatMessage, invalidateSubmissionCache, submission]);
+
+  // 重新读取当前报告对话，供切页后恢复仍在后台生成的回答。
+  const refreshChatMessages = useCallback(async () => {
+    if (!submission) return [];
+    const saved = await listChatMessages(submission.id);
+    setChatMessages(saved);
+    invalidateSubmissionCache(submission.id);
+    return saved;
+  }, [invalidateSubmissionCache, submission]);
 
   // 从已有项目复制资料进入新一轮评图。
   const inheritProject = useCallback(async (projectId: number, sourceSubmissionId?: number) => {
@@ -462,14 +500,14 @@ export function WorkspaceProvider({ children }: PropsWithChildren) {
     draft, draftDirty, selectedDrawingId, evaluation, notice, setNotice, setDraftField, resetDraft,
     toggleAgent, saveDraft, uploadFiles, replaceSelectedDrawing, uploadTaskbook, deleteTaskbook, selectDrawing: setSelectedDrawingId,
     updateSelectedDrawing, deleteSelectedDrawing, deleteAllDrawings, deleteDrawingIds, startEvaluation,
-    pauseEvaluation, downloadCurrentReport, sendQuestion, inheritProject,
+    pauseEvaluation, downloadCurrentReport, sendQuestion, refreshChatMessages, inheritProject,
     refreshProjects, syncProjectName, syncSubmissionTitle, openProject, openSubmission, prefetchSubmission,
   }), [
     projects, project, submission, drawings, attachments, report, history, chatMessages,
     draft, draftDirty, selectedDrawingId, evaluation, notice, setDraftField, resetDraft,
     toggleAgent, saveDraft, uploadFiles, replaceSelectedDrawing, uploadTaskbook, deleteTaskbook, updateSelectedDrawing,
     deleteSelectedDrawing, deleteAllDrawings, deleteDrawingIds, startEvaluation, pauseEvaluation,
-    downloadCurrentReport, sendQuestion, inheritProject, refreshProjects,
+    downloadCurrentReport, sendQuestion, refreshChatMessages, inheritProject, refreshProjects,
     syncProjectName, syncSubmissionTitle, openProject, openSubmission, prefetchSubmission,
   ]);
 

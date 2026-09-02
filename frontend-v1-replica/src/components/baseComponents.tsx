@@ -1,5 +1,6 @@
 // 基础界面组件：画布、按钮、步骤条、字段与通用卡片。
 import { useEffect, useState, type PointerEvent as ReactPointerEvent, type PropsWithChildren, type ReactNode, type WheelEvent } from "react";
+import { createPortal } from "react-dom";
 import type { PageProps, Route } from "../App";
 import { useWorkspace } from "../state/workspace";
 
@@ -30,6 +31,16 @@ export function Button({
     <button type={type} disabled={disabled} className={`app-action-button h-10 whitespace-nowrap rounded-[12px] px-5 disabled:cursor-not-allowed disabled:opacity-60 ${styles[kind]} ${className}`} onClick={onClick}>
       {children}
     </button>
+  );
+}
+
+// 把提示卡挂到页面最外层，确保遮罩不受画布宽度、缩放或父容器定位影响。
+export function AppPromptOverlay({ children, onClose }: PropsWithChildren<{ onClose: () => void }>) {
+  return createPortal(
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-[#171719]/30 p-5" role="dialog" aria-modal="true" onClick={onClose}>
+      {children}
+    </div>,
+    document.body,
   );
 }
 
@@ -136,14 +147,15 @@ export function Steps({ current, order = "default" }: { current: 1 | 2 | 3 | 4; 
 // 显示流程校验或接口失败原因，避免使用浏览器系统弹窗。
 export function FlowErrorCard({ title = "操作未完成", message, onClose }: { title?: string; message: string; onClose: () => void }) {
   return (
-    <>
-      <div className="absolute inset-0 z-[70] bg-[#171719]/30" onClick={onClose} />
-      <section className="figma-shadow font-chat absolute left-[472px] top-[282px] z-[80] h-[198px] w-[592px] rounded-[20px] border border-[#d9dde3] bg-white p-7">
-        <h2 className="text-[24px] font-bold leading-8">{title}</h2>
-        <p className="mt-6 text-[16px] leading-6 text-[#171719]">{message}</p>
-        <button type="button" className="app-action-button absolute bottom-6 right-7 h-10 w-[96px] rounded-[12px] bg-[#171719] text-white" onClick={onClose}>知道了</button>
+    <AppPromptOverlay onClose={onClose}>
+      <section className="app-prompt-card figma-shadow" onClick={(event) => event.stopPropagation()}>
+        <h2 className="app-prompt-title">{title}</h2>
+        <p className="app-prompt-copy">{message}</p>
+        <div className="app-prompt-actions">
+          <button type="button" className="app-action-button h-9 rounded-[10px] bg-[#171719] px-5 text-white" onClick={onClose}>知道了</button>
+        </div>
       </section>
-    </>
+    </AppPromptOverlay>
   );
 }
 
