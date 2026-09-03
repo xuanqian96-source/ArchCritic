@@ -23,6 +23,7 @@ export function loginAccount(payload: { username: string; password: string }): P
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+    retryNetworkErrors: 1,
   });
 }
 
