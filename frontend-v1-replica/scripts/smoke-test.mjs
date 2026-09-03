@@ -25,6 +25,7 @@ async function test() {
     "flowReview.tsx",
   ].map((file) => readFile(join(root, "src", "pages", file), "utf8"))).then((parts) => parts.join("\n"));
   const publicPages = await readFile(join(root, "src", "pagesPublic.tsx"), "utf8");
+  const homepage = await readFile(join(root, "public", "homepage-cn", "archcritic-homepage-cn-figma-dark.html"), "utf8");
   const results = await Promise.all([
     "reportPage.tsx",
     "historyPage.tsx",
@@ -38,12 +39,14 @@ async function test() {
   const helpComponents = await readFile(join(root, "src", "components", "helpComponents.tsx"), "utf8");
   const workspace = await readFile(join(root, "src", "state", "workspace.tsx"), "utf8");
   const knowledge = await readFile(join(root, "src", "pages", "knowledgePage.tsx"), "utf8");
+  const knowledgeQuiz = await readFile(join(root, "src", "pages", "knowledgeQuiz.tsx"), "utf8");
   const knowledgeStyles = await readFile(join(root, "src", "styles", "knowledge.css"), "utf8");
   const knowledgeAssistant = await readFile(join(root, "src", "pages", "knowledgeAssistant.tsx"), "utf8");
   const knowledgeApi = await readFile(join(root, "src", "api", "knowledge.ts"), "utf8");
   const sidebar = await readFile(join(root, "src", "components", "sidebar.tsx"), "utf8");
   routes.forEach((route) => include(app, `${route}:`, `${route} 页面路由缺失`));
   include(publicPages, "/homepage-cn/archcritic-homepage-cn-figma-dark.html", "官网入口缺失");
+  include(homepage, "ArchCritic 结构 Agent 动态演示", "官网最右侧 Agent 没有标记为结构 Agent");
   include(flow, "选择新建评图方式", "新建评图弹窗缺失");
   include(flow, "上传设计图纸", "上传页缺失");
   include(results, "历史版本对比", "历史版本页面缺失");
@@ -109,6 +112,21 @@ async function test() {
   include(knowledge, 'tab !== "all"', "知识库全部状态仍会显示二级分类");
   include(knowledge, "knowledge-overview-case-section", "知识库全部状态缺少上方案例区");
   include(knowledge, "knowledge-overview-knowledge-section", "知识库全部状态缺少下方知识卡区");
+  include(knowledge, 'className="knowledge-back report-top-action-button"', "知识测试返回按钮没有保留文字留白");
+  include(knowledgeQuiz, "选择你的挑战难度", "知识测试缺少难度选择页");
+  include(knowledgeQuiz, "submitKnowledgeQuizAnswer", "知识测试没有逐题提交后端判定");
+  include(knowledgeQuiz, "question.question_type === \"short_answer\"", "知识测试缺少简答题");
+  include(knowledgeQuiz, "question.question_type === \"multiple_choice\"", "知识测试缺少多选题");
+  include(knowledgeQuiz, "question.image_url", "知识测试缺少识图题图片");
+  include(knowledgeQuiz, "参考答案", "知识测试没有在提交后显示答案");
+  include(knowledgeQuiz, "knowledge-quiz-summary", "知识测试缺少完成结果页");
+  include(knowledgeQuiz, "QUESTIONS_PER_QUIZ = 5", "知识测试没有限制为每场随机五题");
+  include(knowledgeQuiz, "knowledge-quiz-wrong-book", "知识测试缺少错题集");
+  include(knowledgeQuiz, "结束并查看得分", "知识测试缺少中途退出得分总结");
+  include(knowledgeQuiz, "result?.is_correct ? \"correct\"", "答题卡没有区分正确与错误状态");
+  include(knowledge, "!quizOpen &&", "知识测试中没有隐藏 AI 助手");
+  include(knowledgeApi, "quizRequest", "知识测试题库没有合并重复请求");
+  include(app, "prefetchKnowledgeQuiz", "登录后没有后台预取知识测试题库");
   include(knowledge, "knowledge-category-scroll", "知识库次级分类没有独立滚动区");
   include(knowledge, "sortLibraryItems", "知识库卡片没有按类型与层级稳定排序");
   include(knowledge, "SEARCH_HISTORY_KEY", "知识库最近搜索记录缺失");
@@ -150,7 +168,7 @@ async function test() {
   include(knowledgeApi, "/api/knowledge/assistant/chat", "知识库助手接口地址缺失");
   include(sidebar, '["dashboard", "create", "knowledge"]', "知识库页面仍会选中项目");
   include(sidebar, "h-[52px] w-[204px]", "侧栏账户样式没有恢复");
-  console.log(`基础检查通过：${routes.length + 102}/${routes.length + 102}`);
+  console.log(`基础检查通过：${routes.length + 118}/${routes.length + 118}`);
 }
 
 test().catch((error) => {

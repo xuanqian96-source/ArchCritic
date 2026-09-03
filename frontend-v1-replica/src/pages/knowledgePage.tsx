@@ -34,7 +34,7 @@ export function KnowledgePage({ go }: PageProps) {
   const [library, setLibrary] = useState<KnowledgeLibraryPayload>(initialLibrary ?? EMPTY_LIBRARY);
   const [view, setView] = useState<LibraryView>("overview");
   const [quizOpen, setQuizOpen] = useState(false);
-  const [quizConfirmOpen, setQuizConfirmOpen] = useState(false);
+  const [quizExitRequest, setQuizExitRequest] = useState(0);
   const [tab, setTab] = useState<LibraryTab>("all");
   const [category, setCategory] = useState("全部");
   const [overviewQuery, setOverviewQuery] = useState("");
@@ -200,14 +200,13 @@ export function KnowledgePage({ go }: PageProps) {
     <div className="font-chat relative h-full w-full bg-[#f4f6f8]">
       <Sidebar go={go} />
       <main className="knowledge-workspace" aria-live="polite">
-        {quizOpen ? <section className="knowledge-view knowledge-view-active"><KnowledgeHeader eyebrow="按分类和难度检验你的知识掌握程度" action={<Button kind="white" className="report-top-action-button" onClick={() => setQuizOpen(false)}>返回知识库</Button>} /><KnowledgeQuiz onOpenCard={(itemId) => { setQuizOpen(false); openItem(itemId); }} /></section> : view === "overview" ? (
-          <OverviewView library={library} searchItems={overviewSearchItems} counts={overviewCounts} items={overviewItems} loading={loading} error={error} tab={tab} category={displayedCategory} categories={categories} query={activeOverviewQuery} assistantResult={assistantResult} assistantReturnLabel={reportContext ? "返回报告界面" : "返回原总览"} restorePosition={overviewPositionRef.current} onPositionChange={(position) => { overviewPositionRef.current = position; }} onQuery={assistantResult ? setAssistantQuery : setOverviewQuery} onExitAssistant={exitAssistantResults} onAdjustAssistant={() => window.dispatchEvent(new Event(reportContext ? "open-report-assistant" : "open-knowledge-assistant"))} onQuiz={() => setQuizConfirmOpen(true)} onTab={selectTab} onCategory={setCategory} onOpen={(itemId, position) => { overviewPositionRef.current = position; openItem(itemId, activeOverviewQuery); }} />
+        {quizOpen ? <section className="knowledge-view knowledge-view-active"><KnowledgeHeader eyebrow="选择难度，每次随机抽取 5 题并即时查看答案" action={<Button kind="white" className="knowledge-back report-top-action-button" onClick={() => setQuizExitRequest((current) => current + 1)}>返回知识库</Button>} /><KnowledgeQuiz exitRequest={quizExitRequest} onExit={() => setQuizOpen(false)} onOpenCard={(itemId) => { setQuizOpen(false); openItem(itemId); }} /></section> : view === "overview" ? (
+          <OverviewView library={library} searchItems={overviewSearchItems} counts={overviewCounts} items={overviewItems} loading={loading} error={error} tab={tab} category={displayedCategory} categories={categories} query={activeOverviewQuery} assistantResult={assistantResult} assistantReturnLabel={reportContext ? "返回报告界面" : "返回原总览"} restorePosition={overviewPositionRef.current} onPositionChange={(position) => { overviewPositionRef.current = position; }} onQuery={assistantResult ? setAssistantQuery : setOverviewQuery} onExitAssistant={exitAssistantResults} onAdjustAssistant={() => window.dispatchEvent(new Event(reportContext ? "open-report-assistant" : "open-knowledge-assistant"))} onQuiz={() => { setQuizExitRequest(0); setQuizOpen(true); }} onTab={selectTab} onCategory={setCategory} onOpen={(itemId, position) => { overviewPositionRef.current = position; openItem(itemId, activeOverviewQuery); }} />
         ) : (
           <DetailView counts={catalogCounts} searchItems={catalogSearchItems} items={catalogItems} detail={visibleDetail} selectedId={selectedId} loading={detailLoading} tab={tab} query={catalogQuery} itemById={itemById} hideEmptyTypes={Boolean(assistantResult)} backLabel={assistantResult ? "返回推荐总览" : "返回知识库总览"} onQuery={setCatalogQuery} onClearQuery={clearDetailSearch} onTab={selectTab} onOpen={openItem} onRelated={openRelated} onPreview={setPreview} onBack={() => { setCatalogQuery(""); setView("overview"); }} />
         )}
       </main>
-      {reportContext && submission ? <ReportAssistant submissionId={submission.id} messages={chatMessages} report={report} sendQuestion={sendQuestion} go={go} /> : <KnowledgeAssistant view={view} tab={tab} category={displayedCategory} currentItem={view === "detail" ? itemById.get(selectedId) ?? null : null} resultSetId={assistantResult?.result_set_id ?? null} onResult={applyAssistantResult} onOpenItem={(itemId) => { if (itemById.has(itemId)) openItem(itemId, activeOverviewQuery); }} />}
-      {quizConfirmOpen && <QuizConfirmOverlay onCancel={() => setQuizConfirmOpen(false)} onConfirm={() => { setQuizConfirmOpen(false); setQuizOpen(true); }} />}
+      {!quizOpen && (reportContext && submission ? <ReportAssistant submissionId={submission.id} messages={chatMessages} report={report} sendQuestion={sendQuestion} go={go} /> : <KnowledgeAssistant view={view} tab={tab} category={displayedCategory} currentItem={view === "detail" ? itemById.get(selectedId) ?? null : null} resultSetId={assistantResult?.result_set_id ?? null} onResult={applyAssistantResult} onOpenItem={(itemId) => { if (itemById.has(itemId)) openItem(itemId, activeOverviewQuery); }} />)}
       {preview && <ZoomableImageStage className="z-[100] bg-[#171719]/75" src={apiUrl(preview.url)} alt={preview.name} onClose={() => setPreview(null)} />}
     </div>
   );
@@ -423,11 +422,6 @@ function KnowledgeFilters({ counts, items, tab, category, categories, withCount 
       {showCategories && tab !== "all" && categories.length > 0 && <><span className="knowledge-filter-divider" /><div className="knowledge-category-scroll" ref={categoryScrollRef}><div className="knowledge-category-filters"><FilterButton active={category === "全部"} label="全部分类" onClick={() => onCategory("全部")} />{categories.map((item) => <FilterButton active={category === item} label={item} count={withCount ? filteredCount(items, tab, item) : undefined} onClick={() => onCategory(item)} key={item} />)}</div></div></>}
     </div>
   );
-}
-
-// 进入知识测试前先说明测试方式，避免误触后直接切换页面。
-function QuizConfirmOverlay({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => void }) {
-  return <div className="knowledge-quiz-confirm-overlay" onClick={onCancel}><section role="dialog" aria-modal="true" aria-labelledby="knowledge-quiz-confirm-title" onClick={(event) => event.stopPropagation()}><span>知识测试</span><h2 id="knowledge-quiz-confirm-title">确定进入知识测试吗？</h2><p>你可以选择知识分类和难度，通过知识卡中的自测题检验学习情况。测试过程中可以随时返回知识库。</p><div><button type="button" onClick={onCancel}>暂不进入</button><button type="button" className="primary" onClick={onConfirm}>开始测试</button></div></section></div>;
 }
 
 // 渲染单个横向筛选按钮。

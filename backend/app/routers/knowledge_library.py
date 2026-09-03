@@ -17,10 +17,12 @@ from app.knowledge_assistant_schemas import (
     KnowledgeConversationRead,
     KnowledgeAssistantMessageRead,
 )
+from app.knowledge_quiz_schemas import KnowledgeQuizAnswerCreate
 from app.models import KnowledgeAssistantMessage, KnowledgeConversation, User
 from app.services.auth import get_current_user
 from app.services.knowledge_assistant import KnowledgeAssistantModelError, generate_knowledge_answer
-from app.services.knowledge_library import build_knowledge_quiz, build_library_payload, get_library_item, render_library_thumbnail
+from app.services.knowledge_library import build_library_payload, get_library_item, render_library_thumbnail
+from app.services.knowledge_quiz import build_knowledge_quiz_bank, evaluate_quiz_answer
 
 
 router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
@@ -34,8 +36,24 @@ async def list_knowledge_library(_: User = Depends(get_current_user)) -> dict:
 
 @router.get("/quiz")
 async def list_knowledge_quiz(_: User = Depends(get_current_user)) -> dict:
-    """返回从现有知识卡自测内容整理出的题库。"""
-    return build_knowledge_quiz(get_settings().wiki_dir)
+    """返回不含正确答案、可按难度进入的多题型知识测试题库。"""
+    return build_knowledge_quiz_bank(get_settings().wiki_dir)
+
+
+@router.post("/quiz/answer")
+async def answer_knowledge_quiz(
+    payload: KnowledgeQuizAnswerCreate,
+    _: User = Depends(get_current_user),
+) -> dict:
+    """判定一道知识测试题，提交后才返回正确答案和解析。"""
+    result = evaluate_quiz_answer(
+        get_settings().wiki_dir,
+        payload.question_id,
+        payload.answer,
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="知识测试题不存在或已停止使用。")
+    return result
 
 
 def _get_owned_conversation(

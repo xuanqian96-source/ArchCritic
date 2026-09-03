@@ -5,6 +5,7 @@
 
 api.archcritic.cn {
 	tls {
+		key_type rsa2048
 		issuer acme {
 			disable_http_challenge
 		}

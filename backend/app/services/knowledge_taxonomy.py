@@ -12,6 +12,7 @@ DIFFICULTY_LABELS = {
     "advanced": "进阶",
     "master": "研习",
 }
+GENERIC_ANSWER_PLACEHOLDER = "应说明具体设计对象、可观察图纸证据、判断依据和可以执行的修改，不以抽象口号代替分析。"
 
 CATEGORY_TERMS = {
     "规范": ("规范", "防火", "消防", "疏散", "无障碍", "安全底线"),
@@ -52,7 +53,7 @@ def classify_knowledge_card(fields: dict[str, str], title: str, excerpt: str) ->
 
 
 def build_quiz_item(item: dict[str, Any], content: str) -> dict[str, Any] | None:
-    """从知识卡已有自测章节抽取一道开放式学习测试题。"""
+    """从知识卡已有自测和答案章节抽取一道可判定的学习测试题。"""
     section = _extract_test_section(content)
     if not section:
         return None
@@ -62,13 +63,25 @@ def build_quiz_item(item: dict[str, Any], content: str) -> dict[str, Any] | None
         prompt = next((_clean_prompt(line) for line in lines if not line.startswith("#")), "")
     if not prompt:
         return None
-    reference_points = [
-        _clean_prompt(line)
-        for line in lines
-        if re.match(r"^\s{2,}[-*]\s+", line) and _clean_prompt(line)
-    ][:4]
-    if not reference_points and item.get("excerpt"):
-        reference_points = [str(item["excerpt"])]
+    answer_section = _extract_answer_section(content)
+    reference_points = _extract_list_points(answer_section)[:6]
+    if not reference_points:
+        reference_points = [
+            _clean_prompt(line)
+            for line in lines
+            if re.match(r"^\s{2,}[-*]\s+", line) and _clean_prompt(line)
+        ][:6]
+    if not reference_points and answer_section:
+        reference_points = [
+            _clean_prompt(line)
+            for line in answer_section.splitlines()
+            if _clean_prompt(line) and not line.lstrip().startswith("#")
+        ][:6]
+    if reference_points == [GENERIC_ANSWER_PLACEHOLDER]:
+        return None
+    # 没有经过知识卡作者明确填写的答案时不进入正式测试，避免用摘要冒充答案。
+    if not reference_points:
+        return None
     return {
         "id": f"Q-{item['id']}",
         "card_id": item["id"],
@@ -88,6 +101,24 @@ def _extract_test_section(content: str) -> str:
         content,
     )
     return match.group(1).strip() if match else ""
+
+
+def _extract_answer_section(content: str) -> str:
+    """读取知识卡作者明确填写的答案或参考答案章节。"""
+    match = re.search(
+        r"(?ms)^##\s+(?:答案要点|参考答案)\s*\n+(.+?)(?=^##\s+|\Z)",
+        content,
+    )
+    return match.group(1).strip() if match else ""
+
+
+def _extract_list_points(section: str) -> list[str]:
+    """把答案章节中的列表项转换成独立、可展示的答案要点。"""
+    return [
+        _clean_prompt(line)
+        for line in section.splitlines()
+        if re.match(r"^\s*(?:[-*]|\d+[.)])\s+", line) and _clean_prompt(line)
+    ]
 
 
 def _is_prompt_line(line: str) -> bool:

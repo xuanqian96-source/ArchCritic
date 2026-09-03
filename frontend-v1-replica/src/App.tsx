@@ -14,7 +14,7 @@ import {
 import { HistoryPage, ReportPage } from "./pagesResults";
 import { AuthPage } from "./pagesAuth";
 import { KnowledgePage } from "./pages/knowledgePage";
-import { prefetchKnowledgeLibrary } from "./api/knowledge";
+import { prefetchKnowledgeLibrary, prefetchKnowledgeQuiz } from "./api/knowledge";
 import { useAuth } from "./state/auth";
 
 export type Route =
@@ -108,8 +108,12 @@ export default function App() {
 
   useEffect(() => {
     if (!user) return;
-    const timer = window.setTimeout(prefetchKnowledgeLibrary, 300);
-    return () => window.clearTimeout(timer);
+    const libraryTimer = window.setTimeout(prefetchKnowledgeLibrary, 300);
+    const quizTimer = window.setTimeout(prefetchKnowledgeQuiz, 1800);
+    return () => {
+      window.clearTimeout(libraryTimer);
+      window.clearTimeout(quizTimer);
+    };
   }, [user]);
 
   const page = useMemo(() => {

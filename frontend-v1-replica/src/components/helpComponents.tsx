@@ -1,5 +1,6 @@
 // 帮助中心组件：二级菜单、新手遮罩指引、常见问题、反馈提交和退出确认。
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { submitFeedback } from "../api/feedback";
 import type { HelpArticle as InformationItem } from "../data/helpContent";
 import { AppPromptOverlay, Button } from "./baseComponents";
@@ -52,6 +53,7 @@ const TOUR_STEPS: TourStep[] = [
 // 用遮罩逐步高亮首页关键区域。
 export function OnboardingTour({ onClose }: { onClose: () => void }) {
   const [stepIndex, setStepIndex] = useState(0);
+  const [viewport, setViewport] = useState(() => ({ width: window.innerWidth, height: window.innerHeight }));
   const step = TOUR_STEPS[stepIndex];
 
   useEffect(() => {
@@ -60,19 +62,35 @@ export function OnboardingTour({ onClose }: { onClose: () => void }) {
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [onClose]);
 
-  return (
-    <div className="absolute inset-0 z-[100]" role="dialog" aria-modal="true" aria-label="新手指引">
+  useEffect(() => {
+    const updateViewport = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
+    window.addEventListener("resize", updateViewport);
+    return () => window.removeEventListener("resize", updateViewport);
+  }, []);
+
+  const scale = Math.min(viewport.width / 1536, viewport.height / 820);
+  const canvasLeft = Math.max(0, (viewport.width - 1536 * scale) / 2);
+  const highlight = {
+    left: canvasLeft + step.rect.left * scale,
+    top: step.rect.top * scale,
+    width: step.rect.width * scale,
+    height: step.rect.height * scale,
+  };
+  const card = { left: canvasLeft + step.card.left * scale, top: step.card.top * scale, transform: `scale(${scale})`, transformOrigin: "top left" };
+
+  return createPortal(
+    <div className="fixed inset-0 z-[1000]" role="dialog" aria-modal="true" aria-label="新手指引">
       <svg className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden="true">
         <defs>
           <mask id="onboarding-cutout">
             <rect width="100%" height="100%" fill="white" />
-            <rect x={step.rect.left - 6} y={step.rect.top - 6} width={step.rect.width + 12} height={step.rect.height + 12} rx="20" fill="black" />
+            <rect x={highlight.left - 6} y={highlight.top - 6} width={highlight.width + 12} height={highlight.height + 12} rx="20" fill="black" />
           </mask>
         </defs>
         <rect width="100%" height="100%" fill="rgba(23,23,25,.62)" mask="url(#onboarding-cutout)" />
       </svg>
-      <div className="pointer-events-none absolute rounded-[20px] border-2 border-[#8b73ff] shadow-[0_0_0_4px_rgba(108,77,255,.18)]" style={step.rect} />
-      <section className="figma-shadow absolute w-[360px] rounded-[20px] border border-[#e8ebef] bg-white p-6" style={step.card}>
+      <div className="pointer-events-none absolute rounded-[20px] border-2 border-[#8b73ff] shadow-[0_0_0_4px_rgba(108,77,255,.18)]" style={highlight} />
+      <section className="figma-shadow absolute w-[360px] rounded-[20px] border border-[#e8ebef] bg-white p-6" style={card}>
         <div className="mb-3 flex items-center justify-between">
           <span className="text-[12px] font-bold text-[#6c4dff]">{stepIndex + 1} / {TOUR_STEPS.length}</span>
           <button type="button" className="onboarding-skip-button text-[#6b7280] hover:text-[#171719]" onClick={onClose}>跳过指引</button>
@@ -84,20 +102,21 @@ export function OnboardingTour({ onClose }: { onClose: () => void }) {
           <Button className="h-9 rounded-[10px]" onClick={() => stepIndex === TOUR_STEPS.length - 1 ? onClose() : setStepIndex((current) => current + 1)}>{stepIndex === TOUR_STEPS.length - 1 ? "完成" : "下一步"}</Button>
         </div>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
 // 渲染公告或帮助文章详情，首页和账户帮助共用。
 export function InformationDetailModal({ item, onClose }: { item: InformationItem; onClose: () => void }) {
   return (
-    <div className="absolute inset-0 z-[70] bg-[#171719]/30" onClick={onClose}>
-      <section className="figma-shadow absolute left-[476px] top-[156px] h-[508px] w-[584px] rounded-[22px] border border-[#e8ebef] bg-white p-7" onClick={(event) => event.stopPropagation()}>
+    <AppPromptOverlay onClose={onClose}>
+      <section className="figma-shadow relative h-[508px] w-[584px] max-w-[calc(100vw-40px)] rounded-[22px] border border-[#e8ebef] bg-white p-7" onClick={(event) => event.stopPropagation()}>
         <h2 className="pr-9 text-[22px] font-bold leading-8">{item.title}</h2>
         <button type="button" aria-label="关闭详情" className="absolute right-6 top-6 flex h-7 w-7 items-center justify-center rounded-full border border-[#e8ebef] text-[18px] text-[#9a9ea7]" onClick={onClose}>×</button>
         <p className="mt-5 text-[14px] leading-7 text-[#53565e]">{item.detail}</p>
       </section>
-    </div>
+    </AppPromptOverlay>
   );
 }
 
@@ -106,8 +125,8 @@ export function InformationListModal({ title, items, onClose }: { title: string;
   const [detail, setDetail] = useState<InformationItem | null>(null);
   if (detail) return <InformationDetailModal item={detail} onClose={() => setDetail(null)} />;
   return (
-    <div className="absolute inset-0 z-[70] bg-[#171719]/30" onClick={onClose}>
-      <section className="figma-shadow absolute left-[476px] top-[156px] h-[508px] w-[584px] rounded-[22px] border border-[#e8ebef] bg-white p-7" onClick={(event) => event.stopPropagation()}>
+    <AppPromptOverlay onClose={onClose}>
+      <section className="figma-shadow relative h-[508px] w-[584px] max-w-[calc(100vw-40px)] rounded-[22px] border border-[#e8ebef] bg-white p-7" onClick={(event) => event.stopPropagation()}>
         <h2 className="ml-2 text-[22px] font-bold">{title}</h2>
         <button type="button" aria-label="关闭列表" className="absolute right-6 top-6 flex h-7 w-7 items-center justify-center rounded-full border border-[#e8ebef] text-[18px] text-[#9a9ea7]" onClick={onClose}>×</button>
         <div className="information-list-scroll absolute bottom-7 left-7 right-7 top-[86px] overflow-y-auto pr-2">
@@ -119,7 +138,7 @@ export function InformationListModal({ title, items, onClose }: { title: string;
           ))}
         </div>
       </section>
-    </div>
+    </AppPromptOverlay>
   );
 }
 
@@ -163,8 +182,8 @@ export function FeedbackModal({ onClose, onDone }: { onClose: () => void; onDone
   }
 
   return (
-    <div className="absolute inset-0 z-[70] bg-[#171719]/30" onClick={onClose}>
-      <section className="figma-shadow absolute left-[476px] top-[130px] h-[560px] w-[584px] rounded-[22px] border border-[#e8ebef] bg-white p-7" onClick={(event) => event.stopPropagation()}>
+    <AppPromptOverlay onClose={onClose}>
+      <section className="figma-shadow relative h-[560px] w-[584px] max-w-[calc(100vw-40px)] rounded-[22px] border border-[#e8ebef] bg-white p-7" onClick={(event) => event.stopPropagation()}>
         <h2 className="text-[22px] font-bold">问题反馈</h2>
         <div className="mt-5 space-y-1 text-[13px] leading-6">
           <p className="font-bold">作者团队：ArchSpark Lab｜筑火实验室</p>
@@ -181,7 +200,7 @@ export function FeedbackModal({ onClose, onDone }: { onClose: () => void; onDone
           <Button className="h-9 rounded-[10px]" disabled={submitting} onClick={() => void submit()}>{submitting ? "提交中…" : "提交反馈"}</Button>
         </div>
       </section>
-    </div>
+    </AppPromptOverlay>
   );
 }
 

@@ -1,6 +1,6 @@
 // 账户界面组件：资料编辑、密码修改、账户菜单和通用错误提示。
 import { useRef, useState } from "react";
-import { Button } from "./baseComponents";
+import { AppPromptOverlay, Button } from "./baseComponents";
 import { useProfile, type UserProfile } from "../state/profile";
 
 // 渲染账号按钮打开的菜单。
@@ -78,8 +78,8 @@ export function ProfileModal({ profile, onClose }: { profile: UserProfile; onClo
   }
 
   return (
-    <div className="font-chat absolute inset-0 z-[60] bg-[#171719]/30" onClick={onClose}>
-      <section className="figma-shadow absolute left-[476px] top-[156px] h-[508px] w-[584px] rounded-[22px] border border-[#e8ebef] bg-white p-7" onClick={(event) => event.stopPropagation()}>
+    <AppPromptOverlay onClose={onClose}>
+      <section className="font-chat figma-shadow relative h-[508px] w-[584px] max-w-[calc(100vw-40px)] rounded-[22px] border border-[#e8ebef] bg-white p-7" onClick={(event) => event.stopPropagation()}>
         <h2 className="text-[22px] font-bold">个人资料</h2>
         <button type="button" className="absolute right-6 top-6 flex h-7 w-7 items-center justify-center rounded-full border border-[#e8ebef] text-[18px] text-[#9a9ea7]" onClick={onClose}>×</button>
         <div className="absolute left-[252px] top-[68px]">
@@ -111,7 +111,7 @@ export function ProfileModal({ profile, onClose }: { profile: UserProfile; onClo
           <Button className="h-9 rounded-[10px]" onClick={() => void saveProfile()}>保存</Button>
         </div>
       </section>
-    </div>
+    </AppPromptOverlay>
   );
 }
 
@@ -142,8 +142,8 @@ export function PasswordModal({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="font-chat absolute inset-0 z-[70] bg-[#171719]/30">
-      <section className="figma-shadow absolute left-[476px] top-[156px] h-[508px] w-[584px] rounded-[22px] border border-[#e8ebef] bg-white p-7">
+    <AppPromptOverlay onClose={onClose}>
+      <section className="font-chat figma-shadow relative h-[508px] w-[584px] max-w-[calc(100vw-40px)] rounded-[22px] border border-[#e8ebef] bg-white p-7" onClick={(event) => event.stopPropagation()}>
         <h2 className="text-[22px] font-bold">修改密码</h2>
         <button type="button" className="absolute right-6 top-6 flex h-7 w-7 items-center justify-center rounded-full border border-[#e8ebef] text-[18px] text-[#9a9ea7]" onClick={onClose}>×</button>
         <p className="absolute left-7 top-[74px] text-[13px] text-[#6b7385]">保存新密码后，将返回个人资料卡片。</p>
@@ -156,7 +156,7 @@ export function PasswordModal({ onClose }: { onClose: () => void }) {
           <Button className="h-9 rounded-[10px]" onClick={() => void savePassword()}>保存</Button>
         </div>
       </section>
-    </div>
+    </AppPromptOverlay>
   );
 }
 

@@ -21,7 +21,10 @@
 - `backend/app/routers/submission_report_data.py`：负责报告的保存、读取和接口结构转换。
 - `backend/app/routers/submission_common.py`：保存提交路由共用的模型选择、暂停和错误处理规则。
 - `backend/app/routers/files.py`：负责图纸修改、单张删除和批量删除，并校验账户归属。
-- `backend/app/routers/knowledge_library.py`：提供知识库目录、单卡详情、知识测试、按需 WebP 缩略图，以及账户隔离的流式知识助手和历史会话接口。
+- `backend/app/routers/knowledge_library.py`：提供知识库目录、单卡详情、不提前暴露答案的知识测试与逐题判定、按需 WebP 缩略图，以及账户隔离的流式知识助手和历史会话接口。
+- `backend/app/services/knowledge_quiz.py`、`backend/app/knowledge_quiz_schemas.py`：只负责知识测试的五类题目构造、题目与答案要点清理、答案保护、简答要点匹配和提交结构，不参与知识库浏览、知识助手或评图。
+- `frontend-v1-replica/src/pages/knowledgeQuiz.tsx`：负责按难度随机抽取 5 题、自由切题、即时反馈、中途退出总结及浏览器本地错题集；不保存后端答题历史。
+- `frontend-v1-replica/src/components/baseComponents.tsx`、`helpComponents.tsx`、`accountComponents.tsx`：通用提示卡、新手指引和账户/帮助弹窗使用页面最外层遮罩，避免受 1536 设计画布缩放限制。
 - `backend/app/knowledge_assistant_schemas.py`：定义 4 种知识助手工具、提问上下文、推荐结果、引用和历史会话的数据格式。
 - `backend/app/services/knowledge_taxonomy.py`：统一七类知识主题、Agent 对应关系和知识卡自测题抽取规则。
 - `backend/app/services/auth.py`：提供密码哈希、会话令牌和项目/提交归属校验。
@@ -84,7 +87,7 @@
 - `frontend-v1-replica/src/pagesFlow.tsx`：流程页面门面；项目信息、阶段选择、上传图纸和评图工作台分别位于 `src/pages/flow*.tsx`。
 - `frontend-v1-replica/src/pagesResults.tsx`：结果页面门面；报告、历史、公共报告组件和历史数据处理位于 `src/pages/report*.tsx`、`historyPage.tsx`。
 - `frontend-v1-replica/src/pages/reportPage.tsx`、`reportAssistant.tsx`、`reportShared.tsx`、`reportKnowledgeCard.tsx`：分别组织报告评分与反馈布局、可跨报告与知识页延续的流式 AI 助手、公共数据转换，以及反馈弹窗内的完整知识卡阅读；`state/reportKnowledgeContext.ts` 保存本次报告推荐的来源与整组引用。
-- `frontend-v1-replica/src/pages/knowledgePage.tsx`、`knowledgeAssistant.tsx`、`knowledgeQuiz.tsx`、`src/styles/knowledge.css`、`src/api/knowledge.ts`：展示知识总览、深度阅读和分类测试，提供搜索、关联跳转、流式助手、四类工具、历史会话及可恢复浏览状态的 AI 推荐结果。
+- `frontend-v1-replica/src/pages/knowledgePage.tsx`、`knowledgeAssistant.tsx`、`knowledgeQuiz.tsx`、`src/styles/knowledge.css`、`src/api/knowledge.ts`：展示知识总览、深度阅读和按难度测试，提供五类题型、逐题答案、结果汇总、本地进度恢复、搜索、关联跳转、流式助手、四类工具、历史会话及可恢复浏览状态的 AI 推荐结果。
 - `frontend-v1-replica/src/components.tsx`：公共组件门面；基础组件、侧栏、账户弹窗与帮助中心位于 `src/components/`，帮助文章内容由 `src/data/helpContent.ts` 统一提供。
 - `frontend-v1-replica/src/styles.css`、`src/styles/report.css`：分别保存通用样式和报告相关样式。
 - `frontend-v1-replica/vite.config.ts`：固定本地开发端口 `4173`，并使用轮询保证 WSL 挂载盘热更新。
@@ -94,7 +97,7 @@
 
 - `deploy/archcritic-backend.service`：以独立 `archcritic` 系统账户运行 FastAPI，只监听 `127.0.0.1:8000`。
 - `deploy/archcritic-web.service`、`deploy/nginx-http.conf`：备案期从 8080 提供前端静态文件，并把接口和知识库图片转发到后端。
-- `deploy/Caddyfile`：备案完成后为 `api.archcritic.cn` 提供 HTTPS 入口。
+- `deploy/Caddyfile`：备案完成后为 `api.archcritic.cn` 提供 HTTPS 入口，并使用 RSA 2048 证书兼容旧手机和内嵌浏览器。
 - `deploy/backend.env.example`：定义服务器数据库、上传目录、知识库、模型和 Cookie 配置，不保存真实密钥。
 - `edgeone.json`、`frontend-v1-replica/.env.production`：定义 EdgeOne Pages 的前端构建、单页路由回退和 `archcritic.cn` 使用的正式 API 地址。
 

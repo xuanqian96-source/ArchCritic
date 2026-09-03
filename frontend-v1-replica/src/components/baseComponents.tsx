@@ -95,8 +95,8 @@ export function ZoomableImageStage({ src, alt, onClose, className = "", imageCla
     if (imageDrag?.pointerId === event.pointerId) setImageDrag(null);
   };
 
-  return (
-    <section className={`absolute inset-0 overflow-hidden p-8 ${className}`} onClick={(event) => { event.stopPropagation(); onClose(); }} onWheel={handleImageWheel}>
+  return createPortal(
+    <section className={`fixed inset-0 overflow-hidden p-8 ${className}`} onClick={(event) => { event.stopPropagation(); onClose(); }} onWheel={handleImageWheel}>
       <div className="flex h-full w-full items-center justify-center overflow-hidden">
         <img
           className={`${imageClassName} select-none rounded-[14px] bg-white object-contain shadow-2xl ${imageZoom > 1 ? "cursor-grab active:cursor-grabbing" : "cursor-default"}`}
@@ -111,7 +111,8 @@ export function ZoomableImageStage({ src, alt, onClose, className = "", imageCla
           onPointerCancel={stopImageDrag}
         />
       </div>
-    </section>
+    </section>,
+    document.body,
   );
 }
 

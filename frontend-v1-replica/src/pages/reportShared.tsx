@@ -447,9 +447,9 @@ export function IssueOverlay({ issue, references, onClose }: { issue: ReportIssu
 // 在不改变主页面布局的前提下展示报告详情。
 export function ReportOverlay({ title, subtitle, lines, fallback, onClose }: { title: string; subtitle: string; lines: string[]; fallback: string; onClose: () => void }) {
   const visibleLines = lines.length ? lines : [fallback];
-  return (
-    <div className="absolute inset-0 z-20 bg-[#171719]/30" onClick={onClose}>
-      <section className="figma-shadow absolute left-[482px] top-[174px] h-[470px] w-[572px] rounded-[22px] border border-[#e8ebef] bg-white p-7" onClick={(event) => event.stopPropagation()}>
+  return createPortal(
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-[#171719]/30 p-5" onClick={onClose}>
+      <section className="figma-shadow relative h-[470px] w-[572px] max-w-[calc(100vw-40px)] rounded-[22px] border border-[#e8ebef] bg-white p-7" onClick={(event) => event.stopPropagation()}>
         <button type="button" aria-label="关闭" onClick={onClose} className="absolute right-6 top-6 flex h-10 w-10 items-center justify-center rounded-full border border-[#e8ebef] bg-white text-[24px] leading-none text-[#9a9ea7] hover:bg-[#f4f6f8]">×</button>
         <p className="text-[12px] text-[#6c4dff]">{subtitle}</p>
         <h2 className="mt-2 text-[24px] font-bold">{title}</h2>
@@ -457,7 +457,8 @@ export function ReportOverlay({ title, subtitle, lines, fallback, onClose }: { t
           {visibleLines.map((line, index) => <p className="rounded-[12px] bg-[#fafbfc] px-4 py-3" key={`${line}-${index}`}>{line}</p>)}
         </div>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

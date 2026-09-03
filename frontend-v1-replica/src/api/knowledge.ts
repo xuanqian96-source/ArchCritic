@@ -38,6 +38,13 @@ export interface KnowledgeLibraryPayload {
 
 export type KnowledgeAssistantTool = "none" | "case_recommendation" | "knowledge_query" | "learning_path" | "current_card_qa";
 
+export type KnowledgeQuizQuestionType = "single_choice" | "multiple_choice" | "true_false" | "image_choice" | "short_answer";
+
+export interface KnowledgeQuizOption {
+  id: string;
+  label: string;
+}
+
 export interface KnowledgeQuizQuestion {
   id: string;
   card_id: string;
@@ -46,13 +53,28 @@ export interface KnowledgeQuizQuestion {
   difficulty: string;
   difficulty_label: string;
   prompt: string;
-  reference_points: string[];
+  question_type: KnowledgeQuizQuestionType;
+  question_type_label: string;
+  options: KnowledgeQuizOption[];
+  image_url: string;
+  image_alt: string;
 }
 
 export interface KnowledgeQuizPayload {
   questions: KnowledgeQuizQuestion[];
-  categories: string[];
-  difficulties: string[];
+  difficulties: { value: string; label: string; count: number }[];
+}
+
+export interface KnowledgeQuizAnswerResult {
+  question_id: string;
+  is_correct: boolean;
+  score: number;
+  status_label: string;
+  correct_answers: string[];
+  answer_points: string[];
+  matched_points: string[];
+  missed_points: string[];
+  explanation: string;
 }
 
 export interface KnowledgeConversationSummary {
@@ -108,8 +130,12 @@ export interface KnowledgeAssistantRequest {
 }
 
 const CACHE_MAX_AGE_MS = 10 * 60 * 1000;
+const QUIZ_CACHE_MAX_AGE_MS = 30 * 60 * 1000;
+const QUIZ_SESSION_CACHE_KEY = "archcritic-knowledge-quiz-payload-v1";
 let libraryCache: { value: KnowledgeLibraryPayload; cachedAt: number } | null = null;
 let libraryRequest: Promise<KnowledgeLibraryPayload> | null = null;
+let quizCache = readQuizSessionCache();
+let quizRequest: Promise<KnowledgeQuizPayload> | null = null;
 const detailCache = new Map<string, { value: KnowledgeLibraryDetail; cachedAt: number }>();
 const detailRequests = new Map<string, Promise<KnowledgeLibraryDetail>>();
 
@@ -223,7 +249,51 @@ export function getKnowledgeAssistantConversations(query = ""): Promise<Knowledg
   return requestJson<KnowledgeConversationSummary[]>(`/api/knowledge/assistant/conversations${suffix}`, { timeoutMs: 10_000 });
 }
 
-// 读取由知识卡原有自测内容生成的开放式题库。
-export function getKnowledgeQuiz(): Promise<KnowledgeQuizPayload> {
-  return requestJson<KnowledgeQuizPayload>("/api/knowledge/quiz", { timeoutMs: 20_000 });
+// 从当前会话恢复不含答案的题库缓存，刷新页面后也无需重复等待。
+function readQuizSessionCache(): { value: KnowledgeQuizPayload; cachedAt: number } | null {
+  try {
+    const cached = JSON.parse(window.sessionStorage.getItem(QUIZ_SESSION_CACHE_KEY) ?? "null") as { value?: KnowledgeQuizPayload; cachedAt?: number } | null;
+    if (!cached?.value?.questions || typeof cached.cachedAt !== "number" || Date.now() - cached.cachedAt >= QUIZ_CACHE_MAX_AGE_MS) return null;
+    return { value: cached.value, cachedAt: cached.cachedAt };
+  } catch {
+    return null;
+  }
+}
+
+// 读取已经准备好的题库，让知识测试组件可以首屏直接显示。
+export function getCachedKnowledgeQuiz(): KnowledgeQuizPayload | null {
+  return quizCache?.value ?? null;
+}
+
+// 读取不提前暴露答案的多题型知识测试题库，并合并重复请求。
+export function getKnowledgeQuiz(forceRefresh = false): Promise<KnowledgeQuizPayload> {
+  if (!forceRefresh && quizCache && Date.now() - quizCache.cachedAt < QUIZ_CACHE_MAX_AGE_MS) return Promise.resolve(quizCache.value);
+  if (quizRequest) return quizRequest;
+  quizRequest = requestJson<KnowledgeQuizPayload>("/api/knowledge/quiz", { timeoutMs: 20_000 })
+    .then((value) => {
+      quizCache = { value, cachedAt: Date.now() };
+      try {
+        window.sessionStorage.setItem(QUIZ_SESSION_CACHE_KEY, JSON.stringify(quizCache));
+      } catch {
+        // 浏览器禁用会话存储时仍保留内存缓存，不影响本次使用。
+      }
+      return value;
+    })
+    .finally(() => { quizRequest = null; });
+  return quizRequest;
+}
+
+// 登录后在后台准备题库，使用户稍后进入测试时无需等待。
+export function prefetchKnowledgeQuiz(): void {
+  void getKnowledgeQuiz().catch(() => undefined);
+}
+
+// 提交一道题，答案和解析只在作答完成后返回。
+export function submitKnowledgeQuizAnswer(questionId: string, answer: string | string[]): Promise<KnowledgeQuizAnswerResult> {
+  return requestJson<KnowledgeQuizAnswerResult>("/api/knowledge/quiz/answer", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question_id: questionId, answer }),
+    timeoutMs: 20_000,
+  });
 }
