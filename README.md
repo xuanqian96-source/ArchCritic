@@ -128,6 +128,7 @@ npm run build
 - `backend.env.example`：服务器环境变量模板，真实密钥只填写在服务器 `/etc/archcritic/backend.env`，不得提交到 Git。
 
 EdgeOne Pages 使用根目录 `edgeone.json`，构建目录为 `frontend-v1-replica`，产物目录为 `frontend-v1-replica/dist`，并已配置单页应用回退规则。
+正式域名从 HTTP 打开时会在业务代码运行前保留路径并切换到 HTTPS；HTTPS 响应同时通过 HSTS 让浏览器记住安全入口一年，避免再次从 HTTP 页面发起登录或注册。
 
 ## 测试方法和常用命令
 

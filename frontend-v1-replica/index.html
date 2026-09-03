@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="ArchCritic 前端 V1 React 独立复刻预览" />
     <title>ArchCritic</title>
+    <script>
+      // 正式域名若通过 HTTP 打开，在业务代码运行前切换到 HTTPS。
+      (() => {
+        const secureHosts = new Set(["archcritic.cn", "www.archcritic.cn"]);
+        if (window.location.protocol !== "http:" || !secureHosts.has(window.location.hostname)) return;
+        const secureUrl = new URL(window.location.href);
+        secureUrl.protocol = "https:";
+        secureUrl.port = "";
+        window.location.replace(secureUrl.toString());
+      })();
+    </script>
   </head>
   <body>
     <main id="root"></main>

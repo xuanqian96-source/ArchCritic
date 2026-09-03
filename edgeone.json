@@ -3,6 +3,17 @@
   "buildCommand": "npm --prefix frontend-v1-replica run build",
   "outputDirectory": "./frontend-v1-replica/dist",
   "nodeVersion": "22.11.0",
+  "headers": [
+    {
+      "source": "/*",
+      "headers": [
+        {
+          "key": "Strict-Transport-Security",
+          "value": "max-age=31536000"
+        }
+      ]
+    }
+  ],
   "rewrites": [
     {
       "source": "/*",

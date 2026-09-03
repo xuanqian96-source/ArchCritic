@@ -14,7 +14,7 @@ function include(source, content, message) {
 
 // 执行全部基础检查。
 async function test() {
-  await access(join(root, "index.html"));
+  const index = await readFile(join(root, "index.html"), "utf8");
   await access(join(root, "src", "main.tsx"));
   await access(join(root, "src", "styles.css"));
   const appStyles = await readFile(join(root, "src", "styles.css"), "utf8");
@@ -44,6 +44,8 @@ async function test() {
   const knowledgeAssistant = await readFile(join(root, "src", "pages", "knowledgeAssistant.tsx"), "utf8");
   const knowledgeApi = await readFile(join(root, "src", "api", "knowledge.ts"), "utf8");
   const sidebar = await readFile(join(root, "src", "components", "sidebar.tsx"), "utf8");
+  include(index, 'window.location.protocol !== "http:"', "正式入口没有识别 HTTP 访问");
+  include(index, 'window.location.replace(secureUrl.toString())', "正式入口没有在业务加载前切换到 HTTPS");
   routes.forEach((route) => include(app, `${route}:`, `${route} 页面路由缺失`));
   include(publicPages, "/homepage-cn/archcritic-homepage-cn-figma-dark.html", "官网入口缺失");
   include(homepage, "ArchCritic 结构 Agent 动态演示", "官网最右侧 Agent 没有标记为结构 Agent");

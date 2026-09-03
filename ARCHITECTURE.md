@@ -99,7 +99,7 @@
 - `deploy/archcritic-web.service`、`deploy/nginx-http.conf`：备案期从 8080 提供前端静态文件，并把接口和知识库图片转发到后端。
 - `deploy/Caddyfile`：备案完成后为 `api.archcritic.cn` 提供 HTTPS 入口，并使用 RSA 2048 证书兼容旧手机和内嵌浏览器。
 - `deploy/backend.env.example`：定义服务器数据库、上传目录、知识库、模型和 Cookie 配置，不保存真实密钥。
-- `edgeone.json`、`frontend-v1-replica/.env.production`：定义 EdgeOne Pages 的前端构建、单页路由回退和 `archcritic.cn` 使用的正式 API 地址。
+- `edgeone.json`、`frontend-v1-replica/index.html`、`frontend-v1-replica/.env.production`：定义 EdgeOne Pages 的前端构建、单页路由回退、HTTP 首次访问自动切换 HTTPS、HSTS 记忆和正式 API 地址。
 
 ## 模块之间的调用关系
 
