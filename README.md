@@ -145,7 +145,7 @@ cd /mnt/e/claude/codex/ArchCritic/backend
 
 将输出中的 `REGISTRATION_CODE_REQUIRED` 和 `REGISTRATION_CODE_LIMITS` 放入服务器 `/etc/archcritic/backend.env`。合并新增码时保留原码配置；移除某个摘要即可停用该码。只有隔离测试需要时才设置 `REGISTRATION_CODE_REQUIRED=false`；当前注册页面始终提示填写内测码。
 
-百度统计在网页端记录访问，由后端公开接口 `/api/site/config` 提供站点 ID。在服务器环境配置 `BAIDU_TONGJI_SITE_ID` 为 `hm.js?` 后的 32 位标识并重启后端；留空表示关闭。网页异步加载官方脚本，手动记录固定路由，避免 React 单页切换漏报或首页 iframe 重复统计。本地开发不启用，不主动上报账号、密码、内测码或项目内容。需要先发布配套前端，再在百度统计管理页完成代码安装检查；尚无 ID 时不能宣称已有访问数据。
+百度统计在网页端记录访问。当前站点 ID 与允许统计的域名由 `frontend-v1-replica/site.config.json` 管理；Vite 正式构建将官方加载代码直接插入首页 `<head>`，便于百度安装检测器读取原始 HTML。ID 留空并重新构建发布即可关闭统计；后端 `/api/site/config` 保留兼容，但不再控制新版前端安装。网页异步加载官方脚本，手动记录固定路由，避免 React 单页切换漏报或首页 iframe 重复统计。本地开发、预览域名和 HTTP 跳转页不统计，不主动上报账号、密码、内测码或项目内容。代码可被检测与实际产生访问数据需要分别验证。
 
 知识测试发布必须核对 `/api/knowledge/quiz/answer` 路由及题目 `question_type/options`、难度 `value/count` 字段；只有 `/api/knowledge/quiz` 存在不足以证明新版题库已部署。当前前端会拒绝旧格式并显示更新提示，不缓存旧数据。
 
@@ -226,6 +226,8 @@ npm run build
 浏览器完整交互验收脚本位于 `backend/scripts/verify_frontend_v1_browser.ps1`。
 
 ## 搜索记录
+
+- 2026-09-05 根据百度[自动检查说明](https://trend.baidu.com/web/help/article?id=178)，检查器抓取网页源码，通过 JS 动态安装可能显示未检测。安装方式已改为构建时写入 `<head>`，统计 ID 集中在前端公开配置；不再等待后端接口后才安装脚本，保持单次安装与手动路由 PV。
 
 - 2026-09-05 经用户授权完成 npm 生产依赖扫描：已知漏洞 0 项，不涵盖 Python/开发依赖。百度统计 ID 经用户完整代码核对一致，但本机、服务器及绕缓存请求的官方脚本均返回空内容，采集尚未确认；官方[代码自动检查说明](https://trend.baidu.com/web/help/article?id=178)也提示，通过 JS 动态安装可能在自动检测中显示未检测到代码，因此以实际脚本内容及采集请求为最终依据。
 

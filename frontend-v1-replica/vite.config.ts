@@ -1,9 +1,42 @@
 // Vite 配置：接入 Tailwind，并保持独立预览工程可直接部署。
 import { defineConfig } from "vite";
 import tailwindcss from "@tailwindcss/vite";
+import siteConfig from "./site.config.json";
+
+// 构建时把官方加载代码放进首页源码，供百度检查器直接识别。
+function baiduAnalyticsHead() {
+  const siteId = siteConfig.baiduTongjiSiteId;
+  if (siteId && !/^[a-f0-9]{32}$/i.test(siteId)) throw new Error("百度统计站点 ID 格式不正确。");
+  return {
+    name: "archcritic-baidu-analytics-head",
+    apply: "build" as const,
+    transformIndexHtml() {
+      if (!siteId) return [];
+      return [{
+        tag: "script",
+        attrs: { id: "archcritic-baidu-analytics" },
+        injectTo: "head" as const,
+        children: `
+var _hmt = window._hmt = window._hmt || [];
+(function() {
+  if (window.top !== window.self || !${JSON.stringify(siteConfig.analyticsHosts)}.includes(window.location.hostname) || window.location.protocol !== "https:") return;
+  if (window.__archcriticAnalyticsInstalled) return;
+  window.__archcriticAnalyticsInstalled = true;
+  _hmt.push(["_setAutoPageview", false]);
+  var hm = document.createElement("script");
+  hm.async = true;
+  hm.src = "https://hm.baidu.com/hm.js?${siteId}";
+  hm.onerror = function() { console.warn("访问统计暂不可用。"); };
+  var s = document.getElementsByTagName("script")[0];
+  s.parentNode.insertBefore(hm, s);
+})();`,
+      }];
+    },
+  };
+}
 
 export default defineConfig({
-  plugins: [tailwindcss()],
+  plugins: [tailwindcss(), baiduAnalyticsHead()],
   server: {
     host: "127.0.0.1",
     port: 4173,
