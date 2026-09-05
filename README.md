@@ -132,6 +132,23 @@ EdgeOne Pages 使用根目录 `edgeone.json`，构建目录为 `frontend-v1-repl
 
 ## 测试方法和常用命令
 
+### 内测注册与百度统计
+
+新注册默认需要内测码；已有账户登录不受影响。服务器只保存码的 SHA-256 摘要，`REGISTRATION_CODE_LIMITS` 配置每个摘要对应的累计注册上限；空字典会暂停新注册。用量存于独立的 `registration_code_usage` 表，与账户创建在同一事务内提交，失败回滚，停用再启用同一码不会重置用量。上线前备份数据库，再由应用正常启动补建此表，不改写原用户。
+
+生成三个码、每码 100 个名额（明文输出请私密保存，不提交 Git）：
+
+```bash
+cd /mnt/e/claude/codex/ArchCritic/backend
+.venv/bin/python scripts/generate_registration_codes.py --count 3 --limit 100
+```
+
+将输出中的 `REGISTRATION_CODE_REQUIRED` 和 `REGISTRATION_CODE_LIMITS` 放入服务器 `/etc/archcritic/backend.env`。合并新增码时保留原码配置；移除某个摘要即可停用该码。只有隔离测试需要时才设置 `REGISTRATION_CODE_REQUIRED=false`；当前注册页面始终提示填写内测码。
+
+百度统计在网页端记录访问，由后端公开接口 `/api/site/config` 提供站点 ID。在服务器环境配置 `BAIDU_TONGJI_SITE_ID` 为 `hm.js?` 后的 32 位标识并重启后端；留空表示关闭。网页异步加载官方脚本，手动记录固定路由，避免 React 单页切换漏报或首页 iframe 重复统计。本地开发不启用，不主动上报账号、密码、内测码或项目内容。需要先发布配套前端，再在百度统计管理页完成代码安装检查；尚无 ID 时不能宣称已有访问数据。
+
+知识测试发布必须核对 `/api/knowledge/quiz/answer` 路由及题目 `question_type/options`、难度 `value/count` 字段；只有 `/api/knowledge/quiz` 存在不足以证明新版题库已部署。当前前端会拒绝旧格式并显示更新提示，不缓存旧数据。
+
 ### 后端测试
 
 日常开发只运行与本次修改直接相关的一项测试，并限制为 60 秒；脚本会自动使用后端虚拟环境和正确工作目录：
@@ -209,6 +226,8 @@ npm run build
 浏览器完整交互验收脚本位于 `backend/scripts/verify_frontend_v1_browser.ps1`。
 
 ## 搜索记录
+
+- 2026-09-05 核对百度统计官方[代码部署](https://tongji.baidu.com/web/help/article?id=219)和 [trackPageview](https://tongji.baidu.com/web/help/article?id=235&type=0)：统计脚本必须安装在网页端，单页应用切换使用手动 PV；当前实现关闭自动 PV，由后端公开站点 ID，前端仅发送固定页面路径。网络依赖漏洞扫描因外发元数据审批未通过，未形成漏洞库比对结论。
 
 - 2026-09-03 参考成熟学习平台和设计系统的测验入口做法：入口应明确告诉用户从哪里开始、下一步做什么；可选择卡片需要完整卡片可点击、清晰的悬停状态，并通过文字或图形而非仅靠颜色表达差异。知识测试初始页据此改为“规则摘要 + 三档挑战卡 + 独立错题复习入口”，同时保持 ArchCritic 原有黑白灰与紫色视觉体系。
 - 2026-09-02 复核腾讯 EdgeOne Pages 官方当前说明：GitHub 仓库仍可自动构建部署，项目设置可绑定根域名或子域名；自定义域名需要按控制台给出的记录更新 DNS。当前项目继续使用 GitHub `master` 自动部署，并把 `archcritic.cn` 作为正式入口。

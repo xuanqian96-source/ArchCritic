@@ -10,7 +10,7 @@ export function checkAccountAvailability(account: string): Promise<{ available: 
   return requestJson(`/api/auth/account-availability?account=${encodeURIComponent(account)}`, { timeoutMs: 10_000 });
 }
 
-export function registerAccount(payload: { username: string; password: string; display_name: string }): Promise<LocalUser> {
+export function registerAccount(payload: { username: string; password: string; display_name: string; invitation_code: string }): Promise<LocalUser> {
   return requestJson("/api/auth/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

@@ -3,6 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import Field, PositiveInt
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -35,6 +36,9 @@ class Settings(BaseSettings):
     auth_session_days: int = 30
     auth_cookie_secure: bool = False
     auth_cookie_samesite: Literal["lax", "strict", "none"] = "lax"
+    registration_code_required: bool = True
+    registration_code_limits: dict[str, PositiveInt] = Field(default_factory=dict)
+    baidu_tongji_site_id: str = Field(default="", pattern=r"^(?:[a-fA-F0-9]{32})?$")
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

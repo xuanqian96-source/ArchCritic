@@ -12,6 +12,7 @@ class AuthRegister(BaseModel):
     username: str = Field(..., min_length=3, max_length=12, pattern=r"^[A-Za-z0-9]+$")
     password: str = Field(..., min_length=8, max_length=128)
     display_name: str = Field(..., min_length=1, max_length=12)
+    invitation_code: str = Field(default="", max_length=128)
 
     model_config = {"str_strip_whitespace": True}
 

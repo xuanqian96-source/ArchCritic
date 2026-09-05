@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.database import init_db
-from app.routers import assets, auth, feedback, files, health, knowledge_library, projects, submissions
+from app.routers import assets, auth, feedback, files, health, knowledge_library, projects, submissions, site
 from app.wiki import resolve_wiki_root
 
 
@@ -45,6 +45,7 @@ app.add_middleware(
 )
 
 app.include_router(health.router)
+app.include_router(site.router)
 app.include_router(auth.router)
 app.include_router(feedback.router)
 app.include_router(assets.router)

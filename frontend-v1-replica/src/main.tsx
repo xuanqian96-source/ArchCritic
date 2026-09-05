@@ -6,6 +6,9 @@ import { ProfileProvider } from "./state/profile";
 import { WorkspaceProvider } from "./state/workspace";
 import { AuthProvider } from "./state/auth";
 import "./styles.css";
+import { startAnalytics } from "./analytics";
+
+void startAnalytics();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

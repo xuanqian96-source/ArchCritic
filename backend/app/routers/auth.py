@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from app.config import get_settings
 from app.database import get_db
@@ -15,6 +16,7 @@ from app.schemas import (
     AuthRegister,
     AuthUserRead,
 )
+from app.services.registration_codes import reserve_registration_code
 from app.services.auth import (
     create_user_session,
     get_current_user,
@@ -85,11 +87,19 @@ async def register(
         password_hash=hash_password(payload.password),
         role="student",
     )
-    db.add(user)
-    db.flush()
-    if has_registered_user is None:
-        db.execute(update(Project).values(user_id=user.id))
-    db.commit()
+    try:
+        reserve_registration_code(db, payload.invitation_code)
+        db.add(user)
+        db.flush()
+        if has_registered_user is None:
+            db.execute(update(Project).where(Project.user_id.is_(None)).values(user_id=user.id))
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="该账号已被使用。") from exc
+    except Exception:
+        db.rollback()
+        raise
     db.refresh(user)
     token, _ = create_user_session(db, user)
     set_session_cookie(response, token)

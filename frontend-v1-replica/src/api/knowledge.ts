@@ -131,7 +131,7 @@ export interface KnowledgeAssistantRequest {
 
 const CACHE_MAX_AGE_MS = 10 * 60 * 1000;
 const QUIZ_CACHE_MAX_AGE_MS = 30 * 60 * 1000;
-const QUIZ_SESSION_CACHE_KEY = "archcritic-knowledge-quiz-payload-v1";
+const QUIZ_SESSION_CACHE_KEY = "archcritic-knowledge-quiz-payload-v2";
 let libraryCache: { value: KnowledgeLibraryPayload; cachedAt: number } | null = null;
 let libraryRequest: Promise<KnowledgeLibraryPayload> | null = null;
 let quizCache = readQuizSessionCache();
@@ -249,11 +249,18 @@ export function getKnowledgeAssistantConversations(query = ""): Promise<Knowledg
   return requestJson<KnowledgeConversationSummary[]>(`/api/knowledge/assistant/conversations${suffix}`, { timeoutMs: 10_000 });
 }
 
+// 拒绝旧后端题库结构，避免把版本不一致误显示为空题库。
+function isCurrentQuizPayload(value: KnowledgeQuizPayload): boolean {
+  return Array.isArray(value?.questions) && Array.isArray(value?.difficulties)
+    && value.questions.every((question) => typeof question.question_type === "string" && Array.isArray(question.options))
+    && value.difficulties.every((difficulty) => typeof difficulty.value === "string" && typeof difficulty.count === "number");
+}
+
 // 从当前会话恢复不含答案的题库缓存，刷新页面后也无需重复等待。
 function readQuizSessionCache(): { value: KnowledgeQuizPayload; cachedAt: number } | null {
   try {
     const cached = JSON.parse(window.sessionStorage.getItem(QUIZ_SESSION_CACHE_KEY) ?? "null") as { value?: KnowledgeQuizPayload; cachedAt?: number } | null;
-    if (!cached?.value?.questions || typeof cached.cachedAt !== "number" || Date.now() - cached.cachedAt >= QUIZ_CACHE_MAX_AGE_MS) return null;
+    if (!cached?.value || !isCurrentQuizPayload(cached.value) || typeof cached.cachedAt !== "number" || Date.now() - cached.cachedAt >= QUIZ_CACHE_MAX_AGE_MS) return null;
     return { value: cached.value, cachedAt: cached.cachedAt };
   } catch {
     return null;
@@ -271,6 +278,7 @@ export function getKnowledgeQuiz(forceRefresh = false): Promise<KnowledgeQuizPay
   if (quizRequest) return quizRequest;
   quizRequest = requestJson<KnowledgeQuizPayload>("/api/knowledge/quiz", { timeoutMs: 20_000 })
     .then((value) => {
+      if (!isCurrentQuizPayload(value)) throw new Error("知识测试服务版本尚未同步，请联系管理员更新后端。");
       quizCache = { value, cachedAt: Date.now() };
       try {
         window.sessionStorage.setItem(QUIZ_SESSION_CACHE_KEY, JSON.stringify(quizCache));

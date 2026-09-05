@@ -21,6 +21,7 @@ export function AuthPage({ go }: PageProps) {
   const [registerTouched, setRegisterTouched] = useState<AuthTouched>(emptyTouched);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [invitationCode, setInvitationCode] = useState("");
   const [availability, setAvailability] = useState<AccountAvailability>({ account: "", status: "idle" });
   const availabilityRequest = useRef(0);
   const draft = mode === "login" ? loginDraft : registerDraft;
@@ -105,12 +106,16 @@ export function AuthPage({ go }: PageProps) {
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setError("");
+    if (mode === "register" && !invitationCode.trim()) {
+      setError("请输入内测码。");
+      return;
+    }
     touchFields({ account: true, password: true, confirmPassword: mode === "register" });
     if (validateAccount(draft.username) || validatePassword(draft.password) || (mode === "register" && validateConfirmPassword(draft.password, draft.confirmPassword))) return;
     if (mode === "register" && !(await verifyAccountAvailability(draft.username))) return;
     setSubmitting(true);
     try {
-      if (mode === "register") await register(draft.username, draft.password);
+      if (mode === "register") await register(draft.username, draft.password, invitationCode.trim());
       else await login(draft.username, draft.password);
       go("dashboard");
     } catch (submitError) {
@@ -157,9 +162,9 @@ export function AuthPage({ go }: PageProps) {
         </div>
       </section>
 
-      <form className="absolute right-[150px] top-[112px] w-[430px] border-l border-[#dfe2e7] py-12 pl-[72px]" onSubmit={(event) => void submit(event)}>
-        <h2 className="text-[30px] font-bold">{mode === "login" ? "欢迎回来" : "创建本地账户"}</h2>
-        <p className="mt-2 text-[13px] text-[#9a9ea7]">{mode === "login" ? "继续你的公共建筑设计学习与方案迭代" : "首次注册后即可开始公共建筑设计学习"}</p>
+      <form className={`absolute right-[150px] w-[430px] border-l border-[#dfe2e7] pl-[72px] ${mode === "register" ? "top-[72px] max-h-[736px] overflow-y-auto py-8" : "top-[112px] py-12"}`} onSubmit={(event) => void submit(event)}>
+        <h2 className="text-[30px] font-bold">{mode === "login" ? "欢迎回来" : "创建账户"}</h2>
+        <p className="mt-2 text-[13px] text-[#9a9ea7]">{mode === "login" ? "继续你的公共建筑设计学习与方案迭代" : "内测期间，请使用邀请人提供的内测码注册"}</p>
 
         <div className="mt-9 flex h-10 border-b border-[#dfe2e7] text-[13px] font-bold">
           <button type="button" className={`w-1/2 border-b-2 ${mode === "login" ? "border-[#171719] text-[#171719]" : "border-transparent text-[#9a9ea7]"}`} onClick={() => switchMode("login")}>登录</button>
@@ -170,13 +175,14 @@ export function AuthPage({ go }: PageProps) {
           <AuthField label="账号" value={draft.username} error={accountError} onChange={(value) => setDraftField("username", value)} onBlur={() => checkRegisterAccount()} placeholder="3–12 位英文字母或数字" autoComplete="username" />
           <AuthField label="密码" value={draft.password} error={passwordError} onChange={(value) => setDraftField("password", value)} onFocus={() => checkRegisterAccount(true)} onBlur={() => touchOnBlurIfFilled("password", draft.password)} placeholder={mode === "register" ? "至少 8 位" : "输入密码"} type="password" autoComplete={mode === "register" ? "new-password" : "current-password"} />
           {mode === "register" && <AuthField label="确认密码" value={draft.confirmPassword} error={confirmPasswordError} onChange={(value) => setDraftField("confirmPassword", value)} onFocus={() => touchFields({ account: true, password: true })} onBlur={() => touchOnBlurIfFilled("confirmPassword", draft.confirmPassword)} placeholder="再次输入密码" type="password" autoComplete="new-password" />}
+          {mode === "register" && <AuthField label="内测码" value={invitationCode} error="" onChange={setInvitationCode} onBlur={() => {}} placeholder="输入邀请人提供的内测码" autoComplete="off" />}
         </div>
 
         {error && <p className="mt-5 rounded-[10px] bg-[#fff1f1] px-4 py-3 text-[12px] font-bold leading-5 text-[#b44747]">{error}</p>}
         <button type="submit" disabled={submitting} className="mt-7 h-11 w-full rounded-[12px] bg-[#171719] text-[14px] font-bold text-white transition hover:bg-[#2d2d31] disabled:opacity-60">
           {submitting ? "请稍候..." : mode === "login" ? "登录并进入工作台" : "注册并进入工作台"}
         </button>
-        <p className="mt-5 text-[11px] leading-5 text-[#9a9ea7]">账户和密码仅保存在当前电脑的本地数据库中，密码不会以明文保存。</p>
+        <p className="mt-5 text-[11px] leading-5 text-[#9a9ea7]">密码以不可逆哈希保存。已有账户可直接登录，无需内测码。</p>
       </form>
     </main>
   );

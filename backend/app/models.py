@@ -30,6 +30,15 @@ class User(Base):
     )
 
 
+class RegistrationCodeUsage(Base):
+    """保存内测码累计使用次数；不保存明文码，不因账户变化返还名额。"""
+
+    __tablename__ = "registration_code_usage"
+
+    code_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    used_count: Mapped[int] = mapped_column(default=0)
+
+
 class UserSession(Base):
     """保存本地登录会话，不在浏览器中存放明文凭据。"""
 

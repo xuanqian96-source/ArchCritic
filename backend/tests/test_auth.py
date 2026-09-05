@@ -6,6 +6,13 @@ from httpx import ASGITransport, AsyncClient
 from app.database import init_db
 from app.main import app
 from app.services.auth import get_current_user
+from app.config import get_settings
+
+
+@pytest.fixture(autouse=True)
+def legacy_registration_mode(monkeypatch):
+    """原账户回归测试单独关闭内测门槛，新规则由内测码专项覆盖。"""
+    monkeypatch.setattr(get_settings(), "registration_code_required", False)
 
 
 @pytest.mark.asyncio

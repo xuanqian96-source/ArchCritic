@@ -8,7 +8,7 @@ interface AuthState {
   user: LocalUser | null;
   loading: boolean;
   login: (username: string, password: string) => Promise<void>;
-  register: (username: string, password: string) => Promise<void>;
+  register: (username: string, password: string, invitationCode: string) => Promise<void>;
   logout: () => Promise<void>;
   updateDisplayName: (displayName: string) => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
@@ -33,8 +33,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setUser(await loginAccount({ username, password }));
   }, []);
 
-  const register = useCallback(async (username: string, password: string) => {
-    const registeredUser = await registerAccount({ username, password, display_name: username });
+  const register = useCallback(async (username: string, password: string, invitationCode: string) => {
+    const registeredUser = await registerAccount({ username, password, display_name: username, invitation_code: invitationCode });
     queueOnboardingTour();
     setUser(registeredUser);
   }, []);

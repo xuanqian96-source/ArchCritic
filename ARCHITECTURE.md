@@ -4,6 +4,10 @@
 
 ### 后端
 
+- `backend/app/services/registration_codes.py`：依据服务器摘要白名单，在注册事务内原子扣减内测名额；`RegistrationCodeUsage` 独立保存累计用量，原用户表无需新增字段。
+- `backend/app/routers/site.py`：只公开百度统计站点 ID 和注册开关，不公开内测码、摘要或模型密钥。
+- `backend/scripts/generate_registration_codes.py`：离线生成随机内测码与摘要配置，不连接数据库。
+
 - `backend/app/main.py`：后端入口，初始化数据库、中间件和接口；用户上传目录不再作为公开静态目录。
 - `backend/app/config.py`：统一读取数据库、上传目录、模型、跨域、登录 Cookie 等配置。
 - `backend/app/database.py`：创建数据库连接，并为已有 SQLite 数据库补齐账户、任务书和报告字段。
@@ -80,6 +84,8 @@
 
 ### 前端
 
+- `frontend-v1-replica/src/analytics.ts`：从公开站点配置加载百度统计脚本，按固定路由手动记录 PV；由 `main.tsx` 启动，本地开发关闭。
+
 - `frontend-v1-replica/src/App.tsx`：处理官网、登录页和受保护功能页的路由切换。
 - `frontend-v1-replica/src/pagesAuth.tsx`：提供与现有视觉一致的双栏注册登录页。
 - `frontend-v1-replica/src/state/auth.tsx`、`src/api/auth.ts`：管理当前本地账户和登录接口；注册成功后通过 `src/state/onboarding.ts` 排队一次首次工作台指引，普通登录不触发。
@@ -121,6 +127,9 @@
 16. 账户帮助入口与首页共用操作指引和常见问题内容；问题反馈通过受保护接口绑定当前用户并写入 `feedback` 表，退出操作在确认后才删除登录会话。
 
 ## 关键设计决定和原因
+
+- 内测码仅约束新注册；默认必须填写且无配置时拒绝注册，避免漏配时开放注册。额度在数据库内原子累加，与用户创建一同提交，不使用进程内计数，保证重启和并发场景不会超额；每码额度独立，三个 100 席码合计最多新增 300 人。
+- 百度统计 ID 属于公开站点标识，服务器提供运行时配置；私密配置不下发。统计按单页路由手动发送，初始加载与页面切换去重。
 
 - 备案期入口固定使用 8080，且 Nginx 使用独立配置和 systemd 服务，原因是服务器现有游戏已经占用 80 和 3000，部署 ArchCritic 不得接管或重启原服务。
 - 服务器后端只监听回环地址，外部请求统一经网页网关进入；数据库、上传文件和知识库放在 `/var/lib/archcritic/`，原因是限制直接暴露并避免代码更新覆盖用户数据。
