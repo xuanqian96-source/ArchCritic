@@ -5,12 +5,12 @@ import { checkAccountAvailability } from "./api/auth";
 import { useAuth } from "./state/auth";
 
 type AuthMode = "login" | "register";
-type AuthDraft = { username: string; password: string; confirmPassword: string };
-type AuthTouched = { account: boolean; password: boolean; confirmPassword: boolean };
+type AuthDraft = { username: string; password: string; confirmPassword: string; invitationCode: string };
+type AuthTouched = { account: boolean; password: boolean; confirmPassword: boolean; invitationCode: boolean };
 type AccountAvailability = { account: string; status: "idle" | "checking" | "available" | "unavailable" };
 
-const emptyDraft = (): AuthDraft => ({ username: "", password: "", confirmPassword: "" });
-const emptyTouched = (): AuthTouched => ({ account: false, password: false, confirmPassword: false });
+const emptyDraft = (): AuthDraft => ({ username: "", password: "", confirmPassword: "", invitationCode: "" });
+const emptyTouched = (): AuthTouched => ({ account: false, password: false, confirmPassword: false, invitationCode: false });
 
 export function AuthPage({ go }: PageProps) {
   const { login, register } = useAuth();
@@ -21,7 +21,8 @@ export function AuthPage({ go }: PageProps) {
   const [registerTouched, setRegisterTouched] = useState<AuthTouched>(emptyTouched);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [invitationCode, setInvitationCode] = useState("");
+  const [invitationFailure, setInvitationFailure] = useState<{ code: string; message: string } | null>(null);
+  const submissionPending = useRef(false);
   const [availability, setAvailability] = useState<AccountAvailability>({ account: "", status: "idle" });
   const availabilityRequest = useRef(0);
   const draft = mode === "login" ? loginDraft : registerDraft;
@@ -34,9 +35,14 @@ export function AuthPage({ go }: PageProps) {
   const accountError = localAccountError || duplicateAccountError;
   const passwordError = touched.password ? validatePassword(draft.password) : "";
   const confirmPasswordError = mode === "register" && touched.confirmPassword ? validateConfirmPassword(draft.password, draft.confirmPassword) : "";
+  const invitationCodeError = mode === "register" && touched.invitationCode
+    ? validateInvitationCode(draft.invitationCode) || (invitationFailure?.code === draft.invitationCode.trim() ? invitationFailure.message : "")
+    : "";
 
   // 分别修改登录或注册草稿，切换页签时互不覆盖。
   const setDraftField = (field: keyof AuthDraft, value: string) => {
+    setError("");
+    if (field === "invitationCode") setInvitationFailure(null);
     const update = (current: AuthDraft) => ({ ...current, [field]: value });
     if (mode === "login") setLoginDraft(update);
     else setRegisterDraft(update);
@@ -84,7 +90,7 @@ export function AuthPage({ go }: PageProps) {
   };
 
   // 只有填写过内容时才在离开输入栏后提示，清空并点击空白处保持默认状态。
-  const touchOnBlurIfFilled = (field: "password" | "confirmPassword", value: string) => {
+  const touchOnBlurIfFilled = (field: "password" | "confirmPassword" | "invitationCode", value: string) => {
     if (value) touchFields({ [field]: true });
   };
 
@@ -94,6 +100,7 @@ export function AuthPage({ go }: PageProps) {
       account: draft.username.trim() ? current.account : false,
       password: draft.password ? current.password : false,
       confirmPassword: draft.confirmPassword ? current.confirmPassword : false,
+      invitationCode: draft.invitationCode.trim() ? current.invitationCode : false,
     });
     if (mode === "login") setLoginTouched(clearEmptyFields);
     else setRegisterTouched(clearEmptyFields);
@@ -105,17 +112,17 @@ export function AuthPage({ go }: PageProps) {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (submissionPending.current) return;
     setError("");
-    if (mode === "register" && !invitationCode.trim()) {
-      setError("请输入内测码。");
-      return;
-    }
-    touchFields({ account: true, password: true, confirmPassword: mode === "register" });
-    if (validateAccount(draft.username) || validatePassword(draft.password) || (mode === "register" && validateConfirmPassword(draft.password, draft.confirmPassword))) return;
-    if (mode === "register" && !(await verifyAccountAvailability(draft.username))) return;
+    // 先标记全部栏位，再统一判断，避免某个错误提前挡住其他必填提示。
+    touchFields({ account: true, password: true, confirmPassword: mode === "register", invitationCode: mode === "register" });
+    if (validateAccount(draft.username) || validatePassword(draft.password)
+      || (mode === "register" && (validateConfirmPassword(draft.password, draft.confirmPassword) || validateInvitationCode(draft.invitationCode)))) return;
+    submissionPending.current = true;
     setSubmitting(true);
     try {
-      if (mode === "register") await register(draft.username, draft.password, invitationCode.trim());
+      if (mode === "register" && !(await verifyAccountAvailability(draft.username))) return;
+      if (mode === "register") await register(draft.username, draft.password, draft.invitationCode.trim());
       else await login(draft.username, draft.password);
       go("dashboard");
     } catch (submitError) {
@@ -123,10 +130,14 @@ export function AuthPage({ go }: PageProps) {
       if (mode === "register" && message.includes("账号已被使用")) {
         setAvailability({ account: draft.username.trim(), status: "unavailable" });
         setRegisterTouched((current) => ({ ...current, account: true }));
+      } else if (mode === "register" && message.includes("内测码")) {
+        setInvitationFailure({ code: draft.invitationCode.trim(), message });
+        setRegisterTouched((current) => ({ ...current, invitationCode: true }));
       } else {
         setError(message);
       }
     } finally {
+      submissionPending.current = false;
       setSubmitting(false);
     }
   };
@@ -134,6 +145,7 @@ export function AuthPage({ go }: PageProps) {
   const switchMode = (next: AuthMode) => {
     setMode(next);
     setError("");
+    setInvitationFailure(null);
     setLoginTouched(emptyTouched());
     setRegisterTouched(emptyTouched());
   };
@@ -175,13 +187,15 @@ export function AuthPage({ go }: PageProps) {
           <AuthField label="账号" value={draft.username} error={accountError} onChange={(value) => setDraftField("username", value)} onBlur={() => checkRegisterAccount()} placeholder="3–12 位英文字母或数字" autoComplete="username" />
           <AuthField label="密码" value={draft.password} error={passwordError} onChange={(value) => setDraftField("password", value)} onFocus={() => checkRegisterAccount(true)} onBlur={() => touchOnBlurIfFilled("password", draft.password)} placeholder={mode === "register" ? "至少 8 位" : "输入密码"} type="password" autoComplete={mode === "register" ? "new-password" : "current-password"} />
           {mode === "register" && <AuthField label="确认密码" value={draft.confirmPassword} error={confirmPasswordError} onChange={(value) => setDraftField("confirmPassword", value)} onFocus={() => touchFields({ account: true, password: true })} onBlur={() => touchOnBlurIfFilled("confirmPassword", draft.confirmPassword)} placeholder="再次输入密码" type="password" autoComplete="new-password" />}
-          {mode === "register" && <AuthField label="内测码" value={invitationCode} error="" onChange={setInvitationCode} onBlur={() => {}} placeholder="输入邀请人提供的内测码" autoComplete="off" />}
+          {mode === "register" && <AuthField label="内测码" value={draft.invitationCode} error={invitationCodeError} onChange={(value) => setDraftField("invitationCode", value)} onFocus={() => touchFields({ account: true, password: true, confirmPassword: true })} onBlur={() => touchOnBlurIfFilled("invitationCode", draft.invitationCode)} placeholder="输入邀请人提供的内测码" autoComplete="off" />}
         </div>
 
-        {error && <p className="mt-5 rounded-[10px] bg-[#fff1f1] px-4 py-3 text-[12px] font-bold leading-5 text-[#b44747]">{error}</p>}
-        <button type="submit" disabled={submitting} className="mt-7 h-11 w-full rounded-[12px] bg-[#171719] text-[14px] font-bold text-white transition hover:bg-[#2d2d31] disabled:opacity-60">
-          {submitting ? "请稍候..." : mode === "login" ? "登录并进入工作台" : "注册并进入工作台"}
-        </button>
+        <div className="relative mt-7">
+          {error && <p role="alert" className="absolute bottom-full left-0 right-0 pb-1 text-[10px] font-medium leading-4 text-[#d33f58]">{error}</p>}
+          <button type="submit" disabled={submitting} className="h-11 w-full rounded-[12px] bg-[#171719] text-[14px] font-bold text-white transition hover:bg-[#2d2d31] disabled:opacity-60">
+            {submitting ? "请稍候..." : mode === "login" ? "登录并进入工作台" : "注册并进入工作台"}
+          </button>
+        </div>
         <p className="mt-5 text-[11px] leading-5 text-[#9a9ea7]">密码以不可逆哈希保存。已有账户可直接登录，无需内测码。</p>
       </form>
     </main>
@@ -193,7 +207,7 @@ function AuthField({ label, value, error, onChange, onBlur, onFocus, placeholder
     <label className="block text-[12px] font-bold">
       <span>{label}</span>
       <input aria-invalid={Boolean(error)} className={`mt-2 h-11 w-full rounded-[12px] border bg-white px-4 text-[13px] font-normal outline-none transition ${error ? "border-[#ff5570] ring-1 ring-[#ff5570]/20" : "border-[#dfe2e7] focus:border-[#6c4dff]"}`} type={type} value={value} autoComplete={autoComplete} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} onBlur={onBlur} onFocus={onFocus} />
-      <span className={`mt-1 block min-h-[16px] text-[10px] font-medium leading-4 ${error ? "text-[#d33f58]" : "text-transparent"}`}>{error || "输入正确"}</span>
+      <span className={`mt-1 block h-[16px] text-[10px] font-medium leading-4 ${error ? "text-[#d33f58]" : "text-transparent"}`}>{error || "输入正确"}</span>
     </label>
   );
 }
@@ -201,14 +215,15 @@ function AuthField({ label, value, error, onChange, onBlur, onFocus, placeholder
 // 校验账号仅由 3–12 位英文字母或数字组成。
 function validateAccount(value: string) {
   if (!value.trim()) return "请输入账号";
-  if (!/^[A-Za-z0-9]{3,12}$/.test(value.trim())) return "账号需为 3–12 位英文字母或数字，不能包含中文或符号";
+  if (!/^[A-Za-z0-9]{3,12}$/.test(value.trim())) return "账号仅限 3–12 位英文字母或数字";
   return "";
 }
 
-// 校验密码至少为 8 位。
+// 与后端保持一致，校验密码为 8–128 位。
 function validatePassword(value: string) {
   if (!value) return "请输入密码";
   if (value.length < 8) return "密码至少需要 8 位";
+  if (value.length > 128) return "密码长度不能超过 128 位";
   return "";
 }
 
@@ -216,5 +231,12 @@ function validatePassword(value: string) {
 function validateConfirmPassword(password: string, confirmation: string) {
   if (!confirmation) return "请再次输入密码";
   if (password !== confirmation) return "两次输入的密码不一致";
+  return "";
+}
+
+// 内测码沿用其他栏位的必填校验，是否有效与剩余名额由后端判断。
+function validateInvitationCode(value: string) {
+  if (!value.trim()) return "请输入内测码";
+  if (value.trim().length > 128) return "内测码长度不能超过 128 位";
   return "";
 }
