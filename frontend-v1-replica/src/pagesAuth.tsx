@@ -162,7 +162,7 @@ export function AuthPage({ go }: PageProps) {
         </div>
       </section>
 
-      <form className={`absolute right-[150px] w-[430px] border-l border-[#dfe2e7] pl-[72px] ${mode === "register" ? "top-[72px] max-h-[736px] overflow-y-auto py-8" : "top-[112px] py-12"}`} onSubmit={(event) => void submit(event)}>
+      <form className={`absolute right-[150px] w-[430px] border-l border-[#dfe2e7] pl-[72px] ${mode === "register" ? "top-[72px] py-8" : "top-[112px] py-12"}`} onSubmit={(event) => void submit(event)}>
         <h2 className="text-[30px] font-bold">{mode === "login" ? "欢迎回来" : "创建账户"}</h2>
         <p className="mt-2 text-[13px] text-[#9a9ea7]">{mode === "login" ? "继续你的公共建筑设计学习与方案迭代" : "内测期间，请使用邀请人提供的内测码注册"}</p>
 
