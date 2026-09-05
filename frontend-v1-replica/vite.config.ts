@@ -14,19 +14,21 @@ function baiduAnalyticsHead() {
       if (!siteId) return [];
       return [{
         tag: "script",
+        attrs: { id: "archcritic-baidu-options" },
+        injectTo: "head" as const,
+        children: `
+var _hmt = _hmt || [];
+_hmt.push(["_setAutoPageview", false]);
+window.__archcriticAnalyticsInstalled = window.top === window.self && ${JSON.stringify(siteConfig.analyticsHosts)}.includes(window.location.hostname) && window.location.protocol === "https:";`,
+      }, {
+        tag: "script",
         attrs: { id: "archcritic-baidu-analytics" },
         injectTo: "head" as const,
         children: `
-var _hmt = window._hmt = window._hmt || [];
+var _hmt = _hmt || [];
 (function() {
-  if (window.top !== window.self || !${JSON.stringify(siteConfig.analyticsHosts)}.includes(window.location.hostname) || window.location.protocol !== "https:") return;
-  if (window.__archcriticAnalyticsInstalled) return;
-  window.__archcriticAnalyticsInstalled = true;
-  _hmt.push(["_setAutoPageview", false]);
   var hm = document.createElement("script");
-  hm.async = true;
   hm.src = "https://hm.baidu.com/hm.js?${siteId}";
-  hm.onerror = function() { console.warn("访问统计暂不可用。"); };
   var s = document.getElementsByTagName("script")[0];
   s.parentNode.insertBefore(hm, s);
 })();`,
